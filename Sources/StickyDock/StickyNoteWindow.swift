@@ -40,7 +40,10 @@ final class StickyNoteWindow: NSPanel {
             height: DetachedFrame.minimumSize.height
         )
 
-        let host = NSHostingView(
+        // Same reason as the dock: this app is rarely frontmost, and without
+        // this the first click on a desktop note is spent making the window key
+        // instead of placing the caret.
+        let host = FirstMouseHostingView(
             rootView: StickyNoteView(noteId: noteId).environmentObject(state)
         )
         host.autoresizingMask = [.width, .height]

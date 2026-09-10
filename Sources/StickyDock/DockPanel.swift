@@ -57,7 +57,9 @@ final class DockPanel: NSPanel {
         isMovable = false
         animationBehavior = .none
 
-        let host = NSHostingView(rootView: DockContentView().environmentObject(state))
+        let host = FirstMouseHostingView(
+            rootView: DockContentView().environmentObject(state)
+        )
         host.translatesAutoresizingMaskIntoConstraints = false
 
         let container = HoverReportingView()
@@ -71,6 +73,12 @@ final class DockPanel: NSPanel {
             host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
         contentView = container
+    }
+
+    /// Asks for key status on hover. It is often refused, because the app is not
+    /// frontmost, which is why `FirstMouseHostingView` exists.
+    private func claimKeyWindow() {
+        makeKeyAndOrderFront(nil)
     }
 
     override var canBecomeKey: Bool { true }
@@ -139,6 +147,7 @@ final class DockPanel: NSPanel {
     func expand() {
         collapseWork?.cancel()
         collapseWork = nil
+        claimKeyWindow()
         guard !state.isExpanded else { return }
         state.isExpanded = true
         layoutForCurrentState()
@@ -201,7 +210,11 @@ final class DockPanel: NSPanel {
             makeKeyAndOrderFront(nil)
             focusEditor()
         } else if isKeyWindow {
-            resignKey()
+            // Deliberately no `resignKey()`. That is a method AppKit calls, not
+            // one to call yourself: it left the panel believing it was still the
+            // key window when it was not, so the next `makeKeyAndOrderFront` was
+            // treated as a no-op and the panel silently stopped receiving mouse
+            // events. The symptom was every other click on a tab doing nothing.
             NSApp.deactivate()
         }
     }
