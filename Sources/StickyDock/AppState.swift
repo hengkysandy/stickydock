@@ -30,7 +30,7 @@ final class AppState: ObservableObject {
     private var saveTask: Task<Void, Never>?
     /// The note being typed into, held until the debounce fires or the app
     /// quits. Only this note is ever flushed.
-    private var pendingEdit: (id: String, rich: RichText)?
+    private var pendingEdit: UnsavedEdit?
 
     init(store: NoteStoring) {
         self.store = store
@@ -51,9 +51,21 @@ final class AppState: ObservableObject {
     /// ask for a note to be detached without knowing anything about AppKit.
     weak var windows: StickyWindowManager?
 
+    /// True while a keystroke is waiting to be written.
+    var hasPendingEdit: Bool { pendingEdit != nil }
+
     func reload() {
         notes = (try? store.allDocked()) ?? []
         detachedNotes = (try? store.allDetached()) ?? []
+        // The database is behind the keyboard by up to one debounce interval, so
+        // publishing it raw would move the note being typed into backwards, the
+        // editor would notice the difference and rewrite itself, and the
+        // characters typed since the last save would be gone. This is what made
+        // typing blink and lose text. Whatever is pending wins.
+        if let pendingEdit {
+            notes = pendingEdit.applied(to: notes)
+            detachedNotes = pendingEdit.applied(to: detachedNotes)
+        }
         // A note deleted or archived underneath the editor must not leave the
         // editor showing a ghost.
         if let id = selectedNoteId, !notes.contains(where: { $0.id == id }) {
@@ -104,7 +116,7 @@ final class AppState: ObservableObject {
     func updateRich(_ rich: RichText, for noteId: String) {
         // Moving to a different note before the debounce fires must not throw
         // away what was typed into the previous one.
-        if let pending = pendingEdit, pending.id != noteId {
+        if let pending = pendingEdit, pending.noteId != noteId {
             saveTask?.cancel()
             saveTask = nil
             commitPendingEdit()
@@ -115,7 +127,7 @@ final class AppState: ObservableObject {
         shown.updatedAt = Date()
         replaceInPublishedLists(shown)
 
-        pendingEdit = (noteId, rich)
+        pendingEdit = UnsavedEdit(noteId: noteId, rich: rich)
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
@@ -140,9 +152,10 @@ final class AppState: ObservableObject {
     /// other field on it, back from a published copy, which could erase a
     /// `notesId` a background sync had just assigned.
     private func commitPendingEdit() {
-        guard let (noteId, rich) = pendingEdit else { return }
+        guard let edit = pendingEdit else { return }
         pendingEdit = nil
-        mutate(noteId) { note in
+        let rich = edit.rich
+        mutate(edit.noteId) { note in
             guard note.rich != rich else { return }
             // Identical text with different formatting is invisible to the sync
             // hash, so that case has to be flagged or it would never be sent.

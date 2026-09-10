@@ -10,6 +10,9 @@ struct RichTextEditorView: NSViewRepresentable {
     /// merely appears on screen.
     var focusOnAppear: Bool = false
     var onEscape: () -> Void = {}
+    /// Raised while the note has the keyboard, so the view can refuse updates
+    /// from underneath the caret.
+    var onEditingChange: (Bool) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -44,6 +47,7 @@ struct RichTextEditorView: NSViewRepresentable {
 
         let coordinator = context.coordinator
         textView.onEscape = { coordinator.parent.onEscape() }
+        textView.onFocusChange = { coordinator.parent.onEditingChange($0) }
         scrollView.documentView = textView
         context.coordinator.textView = textView
         textView.noteContent = rich
@@ -62,8 +66,12 @@ struct RichTextEditorView: NSViewRepresentable {
         context.coordinator.parent = self
         textView.textColor = textColor
         textView.insertionPointColor = textColor
-        // Only write back when something really differs, or every keystroke
-        // would reset the text view from the binding and fight the typist.
+        // Never rewrite a view the user is typing in. The binding can be a few
+        // hundred milliseconds behind the keyboard, and replacing the whole
+        // attributed string from a stale value is exactly what made the note
+        // blink and swallow characters. While the caret is here, the text view
+        // is the authority; anything from elsewhere lands when focus leaves.
+        guard !textView.isTyping else { return }
         if textView.noteContent != rich {
             textView.noteContent = rich
         }

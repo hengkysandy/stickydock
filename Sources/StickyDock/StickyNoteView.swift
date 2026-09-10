@@ -11,6 +11,7 @@ struct StickyNoteView: View {
     let noteId: String
 
     @State private var rich = RichText(text: "")
+    @State private var isTyping = false
     @State private var showChrome = false
     @State private var confirmingDelete = false
 
@@ -32,7 +33,8 @@ struct StickyNoteView: View {
                     textColor: Theme.inkNS,
                     // Escape hands focus back to whatever the user was in
                     // before, rather than closing the note.
-                    onEscape: { NSApp.deactivate() }
+                    onEscape: { NSApp.deactivate() },
+                    onEditingChange: { isTyping = $0 }
                 )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 6)
@@ -52,8 +54,9 @@ struct StickyNoteView: View {
         }
         // A sync can rewrite this note while the window sits open. Without this
         // the window would keep showing text that is no longer what is stored.
+        // A change from elsewhere is only taken while the caret is not here.
         .onChange(of: note?.rich) { _, incoming in
-            if let incoming, incoming != rich { rich = incoming }
+            if !isTyping, let incoming, incoming != rich { rich = incoming }
         }
         .onHover { showChrome = $0 }
         .confirmationDialog(

@@ -11,6 +11,24 @@ final class NoteTextView: NSTextView {
 
     /// Escape. Closes the dock editor, or hands focus back from a desktop note.
     var onEscape: (() -> Void)?
+    /// Reports whether this view currently holds the keyboard.
+    var onFocusChange: ((Bool) -> Void)?
+
+    /// True while the user is typing in this view, which makes it, not the
+    /// database, the authority on what the note says.
+    var isTyping: Bool { window?.firstResponder === self }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocusChange?(true) }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange?(false) }
+        return resigned
+    }
 
     override func cancelOperation(_ sender: Any?) {
         // Escape belongs to the find bar first if one is showing.

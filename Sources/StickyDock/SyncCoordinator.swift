@@ -65,6 +65,14 @@ final class SyncCoordinator {
             scheduleTimer(after: nextInterval())
             return
         }
+        // Never sync mid-sentence. A sync ends by refreshing the note lists, and
+        // doing that while a keystroke is still waiting to be written is what
+        // used to make the editor flicker. Waiting a beat costs nothing: the
+        // notes are going nowhere.
+        if state?.hasPendingEdit == true {
+            scheduleTimer(after: 1)
+            return
+        }
         running = true
 
         let engine = self.engine
@@ -89,7 +97,11 @@ final class SyncCoordinator {
             state?.lastSyncSummary = report.isEmpty
                 ? "Up to date \(Self.clock.string(from: Date()))"
                 : report.summary
-            if !report.isEmpty { state?.reload() }
+            // Only republish when something actually changed, and never on top
+            // of a keystroke that has not been written yet.
+            if !report.isEmpty, state?.hasPendingEdit == false {
+                state?.reload()
+            }
 
         case .failure(let error):
             if let bridgeError = error as? NotesBridgeError, bridgeError == .notAuthorised {

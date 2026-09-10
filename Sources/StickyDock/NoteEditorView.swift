@@ -6,6 +6,7 @@ struct NoteEditorView: View {
     let note: Note
 
     @State private var rich = RichText(text: "")
+    @State private var isTyping = false
     @State private var confirmingDelete = false
 
     var body: some View {
@@ -17,7 +18,8 @@ struct NoteEditorView: View {
                 rich: $rich,
                 textColor: Theme.inkNS,
                 focusOnAppear: true,
-                onEscape: { state.selectedNoteId = nil }
+                onEscape: { state.selectedNoteId = nil },
+                onEditingChange: { isTyping = $0 }
             )
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
@@ -36,8 +38,11 @@ struct NoteEditorView: View {
         // A sync can rewrite this note while the editor sits open. Without this
         // the editor keeps showing text that is no longer what is stored, and
         // the next keystroke pushes the stale version back out.
+        // A change from elsewhere is only taken while the caret is not here.
+        // Otherwise a sync landing mid-sentence would overwrite what is being
+        // typed, and the stale value would then be saved back as a local edit.
         .onChange(of: note.rich) { _, incoming in
-            if incoming != rich { rich = incoming }
+            if !isTyping, incoming != rich { rich = incoming }
         }
         .confirmationDialog(
             "Delete this note for good?",
