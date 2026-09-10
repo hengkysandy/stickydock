@@ -28,6 +28,26 @@ if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
   cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 fi
 
+# SPM emits each target's resources as a separate .bundle next to the binary.
+# Bundle.module finds them through Bundle.main.resourceURL, which is
+# Contents/Resources, so they have to be copied in. Forgetting this produces an
+# app that builds, launches, looks fine, and never syncs, because the Notes
+# bridge script is not there. Hence the hard check below.
+BINDIR="$(dirname "$BIN")"
+for bundle in "$BINDIR"/*.bundle; do
+  [ -e "$bundle" ] || continue
+  cp -R "$bundle" "$APP/Contents/Resources/"
+done
+
+BRIDGE="$APP/Contents/Resources/StickyDock_StickyDockCore.bundle/notes_bridge.js"
+if [ ! -f "$BRIDGE" ]; then
+  echo "FAILED: the Notes bridge script is not in the app bundle."
+  echo "        expected at $BRIDGE"
+  echo "        without it StickyDock launches but never syncs."
+  exit 1
+fi
+echo "==> bridge script present"
+
 echo "==> codesign"
 if security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
   codesign --force --options runtime --timestamp=none \

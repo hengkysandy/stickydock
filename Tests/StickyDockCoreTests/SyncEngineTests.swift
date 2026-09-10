@@ -235,6 +235,43 @@ struct SyncEngineRunTests {
         #expect(copy?.notesId == nil, "the copy must not claim the original's Notes id")
     }
 
+    @Test func aConflictSettlesInsteadOfSpawningACopyEveryPoll() throws {
+        // Without this the app would produce one "(conflict ...)" note per poll
+        // for ever, which is worse than losing the edit.
+        let (engine, store, _, dir) = try makeEngine(
+            notes: [Note(id: "l1", notesId: "r1", text: "mac edit",
+                         syncedHash: ContentHash.of("original"))],
+            remote: [RemoteNote(id: "r1", title: "phone edit", text: "phone edit",
+                                modifiedAt: Date())]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        #expect(try engine.runOnce().conflicts == 1)
+        let afterFirst = try store.all().count
+
+        #expect(try engine.runOnce().conflicts == 0, "a second pass must not re-flag it")
+        #expect(try engine.runOnce().conflicts == 0, "nor a third")
+        #expect(try store.all().count == afterFirst, "no extra copies may appear")
+    }
+
+    @Test func afterAConflictTheLocalEditReachesNotes() throws {
+        // Keeping both texts is only half the promise. The version the user was
+        // actually looking at has to end up in Apple Notes too.
+        let (engine, _, bridge, dir) = try makeEngine(
+            notes: [Note(id: "l1", notesId: "r1", text: "mac edit",
+                         syncedHash: ContentHash.of("original"))],
+            remote: [RemoteNote(id: "r1", title: "phone edit", text: "phone edit",
+                                modifiedAt: Date())]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        _ = try engine.runOnce()
+        _ = try engine.runOnce()
+        let remoteTexts = bridge.current.map(\.text)
+        #expect(remoteTexts.contains("mac edit"))
+        #expect(remoteTexts.contains { $0.contains("phone edit") })
+    }
+
     @Test func remoteEditIsPulledIntoTheLocalCache() throws {
         let (engine, store, _, dir) = try makeEngine(
             notes: [Note(id: "l1", notesId: "r1", text: "old",
