@@ -10,7 +10,11 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 APP="$ROOT/build/StickyDock.app"
 CONFIG="${CONFIG:-release}"
-IDENTITY="${STICKYDOCK_IDENTITY:-Apple Development: <your Apple ID> (<team>)}"
+# Whichever Apple Development certificate is in the keychain. Override with
+# STICKYDOCK_IDENTITY to pick a specific one. Deliberately not hardcoded: the
+# certificate name contains the owner's Apple ID email address.
+IDENTITY="${STICKYDOCK_IDENTITY:-$(security find-identity -v -p codesigning \
+    | awk -F'"' '/Apple Development/ { print $2; exit }')}"
 
 echo "==> swift build -c $CONFIG"
 swift build -c "$CONFIG" --product StickyDock
@@ -49,11 +53,11 @@ fi
 echo "==> bridge script present"
 
 echo "==> codesign"
-if security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
+if [ -n "$IDENTITY" ] && security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
   codesign --force --options runtime --timestamp=none \
            --sign "$IDENTITY" "$APP"
 else
-  echo "!! identity not found, falling back to ad-hoc."
+  echo "!! no Apple Development certificate found, falling back to ad-hoc."
   echo "!! macOS will re-ask for Automation permission after every build."
   codesign --force --sign - "$APP"
 fi

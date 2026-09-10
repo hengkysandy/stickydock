@@ -15,7 +15,7 @@
 - macOS 14+ deployment target. Built and run on macOS 26.6.2, Swift 6.3.3.
 - Swift strict concurrency. No `@unchecked Sendable` without a comment saying why.
 - Bundle id `com.hengkysandy.stickydock`. Never change it: TCC grants are keyed to it.
-- Sign with `Apple Development: <your Apple ID> (<team>)`. Never ad-hoc.
+- Sign with the machine's `Apple Development` certificate. Never ad-hoc.
 - `LSUIElement = true`. No Dock icon.
 - Not sandboxed. `NSAppleEventsUsageDescription` required in Info.plist.
 - Address Apple Notes by `id`, never by `name`.
@@ -24,7 +24,6 @@
 - Never concatenate note text into a JXA script. Pass JSON on stdin.
 - Skip notes where `passwordProtected` or `shared` is true.
 - No network code. No analytics.
-- Personal project: GitHub owner is `hengkysandy`, never `hengky-nexa` or `arthanexa`.
 
 ---
 
@@ -45,7 +44,7 @@
 
 - [ ] **Step 1:** Write `Package.swift` with an executable target `StickyDock`, a library target `StickyDockCore` (all logic, so tests can import it), and a test target `StickyDockCoreTests`. Add GRDB as the only dependency.
 - [ ] **Step 2:** Write `Info.plist` with `CFBundleIdentifier=com.hengkysandy.stickydock`, `LSUIElement=true`, `NSAppleEventsUsageDescription`, `LSMinimumSystemVersion=14.0`.
-- [ ] **Step 3:** Write `build.sh`: `swift build -c release`, assemble `build/StickyDock.app/Contents/{MacOS,Resources}`, copy the binary and Info.plist, then `codesign --force --options runtime --sign "Apple Development: <your Apple ID> (<team>)"`.
+- [ ] **Step 3:** Write `build.sh`: `swift build -c release`, assemble `build/StickyDock.app/Contents/{MacOS,Resources}`, copy the binary and Info.plist, then `codesign --force --options runtime` with the machine's Apple Development certificate.
 - [ ] **Step 4:** Write a minimal `AppDelegate` that creates an `NSStatusItem` with a title, and a Quit menu item.
 - [ ] **Step 5:** Run `scripts/build.sh`. Expected: exit 0, `codesign -dv` reports the Apple Development identity.
 - [ ] **Step 6:** Run `scripts/run.sh`. Expected: menu bar item appears, no Dock icon.

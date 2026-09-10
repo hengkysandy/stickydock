@@ -210,7 +210,7 @@ Swift Testing (`import Testing`), which ships with Swift 6.3.
 - **Not sandboxed.** Sending Apple Events to Notes and reading a path in iCloud
   Drive both need it. The app is for one user on their own machines.
 - **Code signing.** Signed with the existing free-account certificate
-  `Apple Development: <your Apple ID> (<team>)`, not ad-hoc. macOS keys
+  the machine's own `Apple Development` certificate, not ad-hoc. macOS keys
   the TCC Automation grant to the code signature, and an ad-hoc signature changes
   its hash on every build, which would re-prompt for "control Notes" every time.
   A stable certificate means the user approves once. Not notarized, which is fine
