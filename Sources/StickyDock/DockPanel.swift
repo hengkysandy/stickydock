@@ -95,13 +95,14 @@ final class DockPanel: NSPanel {
         guard let screen = NSScreen.screens.first ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
 
+        // The height never changes. It used to grow with the note count and then
+        // jump to the full panel height on expand, which also slid the panel
+        // vertically because it stays centred. Widening, growing and sliding at
+        // once is what made opening the deck feel clumsy. Only the width moves.
+        let height = min(Theme.panelHeight, visible.height - 40)
         let width: CGFloat
-        let height: CGFloat
         if !state.isExpanded {
             width = Theme.collapsedWidth
-            // Grow with the number of notes, but never past two thirds of the screen.
-            let wanted = CGFloat(max(state.notes.count, 1)) * 19 + 20
-            height = min(max(wanted, 60), visible.height * 0.66)
         } else {
             // The deck is only as wide as it needs to be: tabs alone, tabs plus
             // a peek while the pointer rests on one, tabs plus the editor when a
@@ -113,7 +114,6 @@ final class DockPanel: NSPanel {
             } else {
                 width = Theme.tabWidth + 10
             }
-            height = min(Theme.panelHeight, visible.height - 40)
         }
 
         let frame = NSRect(
@@ -122,6 +122,7 @@ final class DockPanel: NSPanel {
             width: width,
             height: height
         )
+        guard frame != self.frame else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16

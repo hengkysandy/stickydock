@@ -43,14 +43,22 @@ struct DockContentView: View {
             }
             Spacer(minLength: 6)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The window is a constant height now, so the pill sizes itself to the
+        // notes and sits in the middle of it rather than filling the whole edge.
+        .frame(maxWidth: .infinity)
+        .frame(height: stripeHeight)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.ultraThinMaterial)
         )
+        .frame(maxHeight: .infinity, alignment: .center)
         .accessibilityElement()
         .accessibilityLabel(Text(
             "StickyDock, \(state.notes.count) notes. Move the pointer here to open."
         ))
+    }
+
+    private var stripeHeight: CGFloat {
+        max(CGFloat(min(state.notes.count, 14)) * 19 + 20, 44)
     }
 
     // MARK: - Reached for
