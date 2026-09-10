@@ -4,9 +4,11 @@ Sticky notes docked to the edge of your Mac, that show up in Apple Notes on your
 iPhone.
 
 Move the pointer to the right edge of the screen and a thin stripe fans open into
-a deck of notes. Click one to edit it. Everything you write is mirrored into a
-folder called **StickyDock** in Apple Notes, so the same notes are on your phone,
-your iPad, and every other Mac signed into the same Apple ID.
+a deck of notes. Click one to edit it, or **drag it out onto the desktop** and it
+becomes a real sticky note window that stays where you put it. Everything you
+write is mirrored into a folder called **StickyDock** in Apple Notes, so the same
+notes are on your phone, your iPad, and every other Mac signed into the same
+Apple ID.
 
 ## Why it works this way
 
@@ -66,10 +68,23 @@ what it makes. It never touches your real StickyDock folder.
 | | |
 |---|---|
 | Open the deck | Move the pointer to the right edge of the screen |
+| Put a note on the desktop | Drag it out of the deck |
+| Put it back | The `⇥` button in the note's top left corner |
+| Find a buried desktop note | Menu bar › Bring Desktop Notes to Front |
 | New note | `⌃⌥N` from anywhere, or the `+` in the deck, or the menu bar |
 | Close the editor | The `‹` in the corner |
 | Search everything | Menu bar › All Notes… |
 | Force a sync | Menu bar › Sync Now |
+
+**Desktop notes float above other windows.** This is a deliberate difference from
+Apple's Stickies, which sit at normal window level and get buried. The dock
+already covers the "keep it out of my way" case, so dragging a note out is read
+as an explicit request to keep it in front. One click puts it back.
+
+Their position and size are per-Mac and stay on this machine. Screen layouts
+differ between machines, so a window position is not something worth syncing. A
+note parked on a monitor you later unplug is brought back onto a screen you still
+have, rather than being stranded somewhere you cannot reach it.
 
 **Archive keeps the text, delete does not.** Archiving takes the note out of the
 Notes folder, so it leaves your phone, but the text stays here and stays

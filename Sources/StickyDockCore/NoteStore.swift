@@ -6,6 +6,10 @@ import GRDB
 /// without a database.
 public protocol NoteStoring: Sendable {
     func allActive() throws -> [Note]
+    /// Active notes that are still in the dock, so the deck does not show a note
+    /// that is already sitting on the desktop in its own window.
+    func allDocked() throws -> [Note]
+    func allDetached() throws -> [Note]
     func all() throws -> [Note]
     func find(id: String) throws -> Note?
     func find(notesId: String) throws -> Note?
@@ -39,7 +43,18 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
 
     private static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
-        migrator.registerMigration("v1-notes") { db in
+        for (name, migrate) in migrationsInOrder {
+            migrator.registerMigration(name, migrate: migrate)
+        }
+        return migrator
+    }
+
+    private static var migrationsInOrder: [(String, @Sendable (Database) throws -> Void)] {
+        [("v1-notes", v1), ("v2-detached-windows", v2)]
+    }
+
+    @Sendable private static func v1(_ db: Database) throws {
+        do {
             try db.create(table: "note") { t in
                 t.primaryKey("id", .text).notNull()
                 t.column("notesId", .text)
@@ -54,7 +69,44 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
             try db.create(index: "note_on_notesId", on: "note", columns: ["notesId"])
             try db.create(index: "note_on_archivedAt", on: "note", columns: ["archivedAt"])
         }
-        return migrator
+    }
+
+    @Sendable private static func v2(_ db: Database) throws {
+        do {
+            try db.alter(table: "note") { t in
+                t.add(column: "isDetached", .boolean).notNull().defaults(to: false)
+                t.add(column: "frameX", .double)
+                t.add(column: "frameY", .double)
+                t.add(column: "frameWidth", .double)
+                t.add(column: "frameHeight", .double)
+            }
+            try db.create(index: "note_on_isDetached", on: "note", columns: ["isDetached"])
+        }
+    }
+
+    /// Builds a database at the v1 schema and stops, so a test can prove the
+    /// v1 to v2 migration works on a real old file rather than a fresh one.
+    /// An upgrade that drops every existing note is the worst bug this app could
+    /// ship, so it gets a test.
+    public static func makeVersionOneDatabaseForTesting(
+        path: String, noteId: String, text: String
+    ) throws {
+        let queue = try DatabaseQueue(path: path)
+        var onlyV1 = DatabaseMigrator()
+        for (name, migrate) in Self.migrationsInOrder where name == "v1-notes" {
+            onlyV1.registerMigration(name, migrate: migrate)
+        }
+        try onlyV1.migrate(queue)
+        try queue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO note (id, notesId, text, color, createdAt, updatedAt,
+                                      archivedAt, sortIndex, syncedHash)
+                    VALUES (?, NULL, ?, 'yellow', ?, ?, NULL, 0, NULL)
+                    """,
+                arguments: [noteId, text, Date(), Date()]
+            )
+        }
     }
 
     // MARK: - Reads
@@ -63,6 +115,22 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
         try dbQueue.read { db in
             try Note.filter(Column("archivedAt") == nil)
                 .order(Column("sortIndex").asc, Column("updatedAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    public func allDocked() throws -> [Note] {
+        try dbQueue.read { db in
+            try Note.filter(Column("archivedAt") == nil && Column("isDetached") == false)
+                .order(Column("sortIndex").asc, Column("updatedAt").desc)
+                .fetchAll(db)
+        }
+    }
+
+    public func allDetached() throws -> [Note] {
+        try dbQueue.read { db in
+            try Note.filter(Column("archivedAt") == nil && Column("isDetached") == true)
+                .order(Column("sortIndex").asc)
                 .fetchAll(db)
         }
     }

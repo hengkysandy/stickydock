@@ -136,6 +136,66 @@ struct NoteStoreTests {
         #expect(try reopened.find(id: id)?.text == "persisted")
     }
 
+    @Test func detachedNotesLeaveTheDeckButStayActive() throws {
+        try withStore { store in
+            try store.upsert(Note(id: "docked", text: "in the dock"))
+            try store.upsert(Note(
+                id: "floating", text: "on the desktop", isDetached: true,
+                frame: NoteFrame(x: 10, y: 20, width: 260, height: 220)
+            ))
+            #expect(try store.allDocked().map(\.id) == ["docked"])
+            #expect(try store.allDetached().map(\.id) == ["floating"])
+            #expect(try store.allActive().count == 2, "both are still active notes")
+        }
+    }
+
+    @Test func anArchivedDetachedNoteIsInNeitherList() throws {
+        try withStore { store in
+            try store.upsert(Note(id: "a", text: "x", archivedAt: Date(), isDetached: true))
+            #expect(try store.allDocked().isEmpty)
+            #expect(try store.allDetached().isEmpty)
+        }
+    }
+
+    @Test func theWindowFrameSurvivesARestart() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("notes.sqlite").path
+
+        let frame = NoteFrame(x: 120.5, y: 340.25, width: 300, height: 260)
+        do {
+            let store = try NoteStore(path: path)
+            try store.upsert(Note(id: "f", text: "x", isDetached: true, frame: frame))
+        }
+        let reopened = try NoteStore(path: path)
+        #expect(try reopened.find(id: "f")?.frame == frame)
+        #expect(try reopened.find(id: "f")?.isDetached == true)
+    }
+
+    @Test func aNoteWithNoFrameReportsNilRatherThanZeros() throws {
+        try withStore { store in
+            try store.upsert(Note(id: "n", text: "x"))
+            #expect(try store.find(id: "n")?.frame == nil)
+        }
+    }
+
+    @Test func aDatabaseWrittenBeforeDetachedWindowsExistedStillOpens() throws {
+        // The v1 to v2 migration has to work on a real v1 file, not just a fresh
+        // one, or an existing install loses every note on upgrade.
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("notes.sqlite").path
+
+        try NoteStore.makeVersionOneDatabaseForTesting(path: path, noteId: "old", text: "kept")
+        let migrated = try NoteStore(path: path)
+        #expect(try migrated.find(id: "old")?.text == "kept")
+        #expect(try migrated.find(id: "old")?.isDetached == false)
+    }
+
     @Test func nextSortIndexIsOneAboveTheHighest() throws {
         try withStore { store in
             #expect(try store.nextSortIndex() == 0)

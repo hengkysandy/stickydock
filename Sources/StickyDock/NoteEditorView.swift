@@ -35,6 +35,12 @@ struct NoteEditorView: View {
         }
         // Switching notes without closing the editor must load the new text.
         .onChange(of: note.id) { _, _ in text = note.text }
+        // A sync can rewrite this note while the editor sits open. Without this
+        // the editor keeps showing text that is no longer what is stored, and
+        // the next keystroke pushes the stale version back out.
+        .onChange(of: note.text) { _, incoming in
+            if incoming != text { text = incoming }
+        }
         .confirmationDialog(
             "Delete this note for good?",
             isPresented: $confirmingDelete,

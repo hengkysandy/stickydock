@@ -8,11 +8,17 @@ import StickyDockCore
 /// now, so there is exactly one answer to "what does the app currently think".
 @MainActor
 final class AppState: ObservableObject {
+    /// Notes still in the dock. A detached note is deliberately absent here: it
+    /// is already visible on the desktop, and showing it twice is confusing.
     @Published private(set) var notes: [Note] = []
+    @Published private(set) var detachedNotes: [Note] = []
     @Published var isExpanded = false
     @Published var selectedNoteId: String?
     @Published var lastSyncSummary = "Not synced yet"
     @Published var syncProblem: String?
+    /// The note currently being pulled out of the deck. Its card stays in the
+    /// list, dimmed, until the drag finishes.
+    @Published var draggingNoteId: String?
 
     let store: NoteStoring
     private let onNotesChanged: () -> Void
@@ -32,8 +38,13 @@ final class AppState: ObservableObject {
         return notes.first { $0.id == selectedNoteId }
     }
 
+    /// Owns the desktop windows. Set by the app delegate once, so the views can
+    /// ask for a note to be detached without knowing anything about AppKit.
+    weak var windows: StickyWindowManager?
+
     func reload() {
-        notes = (try? store.allActive()) ?? []
+        notes = (try? store.allDocked()) ?? []
+        detachedNotes = (try? store.allDetached()) ?? []
         // A note deleted or archived underneath the editor must not leave the
         // editor showing a ghost.
         if let id = selectedNoteId, !notes.contains(where: { $0.id == id }) {
@@ -60,12 +71,11 @@ final class AppState: ObservableObject {
     /// Writes are debounced. Every keystroke hitting SQLite would be wasteful,
     /// and every keystroke triggering a sync would hammer Apple Events.
     func updateText(_ text: String, for noteId: String) {
-        guard var note = notes.first(where: { $0.id == noteId }) else { return }
+        guard var note = anyNote(noteId) else { return }
+        guard note.text != text else { return }
         note.text = text
         note.updatedAt = Date()
-        if let index = notes.firstIndex(where: { $0.id == noteId }) {
-            notes[index] = note
-        }
+        replaceInPublishedLists(note)
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
@@ -82,11 +92,11 @@ final class AppState: ObservableObject {
         guard saveTask != nil else { return }
         saveTask?.cancel()
         saveTask = nil
-        for note in notes { try? store.upsert(note) }
+        for note in notes + detachedNotes { try? store.upsert(note) }
     }
 
     func setColor(_ color: NoteColor, for noteId: String) {
-        guard var note = notes.first(where: { $0.id == noteId }) else { return }
+        guard var note = anyNote(noteId) else { return }
         note.color = color
         note.updatedAt = Date()
         try? store.upsert(note)
@@ -95,6 +105,7 @@ final class AppState: ObservableObject {
     }
 
     func archive(_ noteId: String) {
+        windows?.close(noteId: noteId)
         try? store.archive(id: noteId, at: Date())
         if selectedNoteId == noteId { selectedNoteId = nil }
         reload()
@@ -102,10 +113,80 @@ final class AppState: ObservableObject {
     }
 
     func delete(_ noteId: String) {
+        windows?.close(noteId: noteId)
         try? store.delete(id: noteId)
         if selectedNoteId == noteId { selectedNoteId = nil }
         reload()
         onLocalEdit?()
+    }
+
+    // MARK: - Desktop windows
+
+    /// Lifts a note out of the dock into its own window on the desktop.
+    ///
+    /// Deliberately does **not** reload the published lists. Reloading here would
+    /// remove the card from the deck, SwiftUI would tear down the very view whose
+    /// drag gesture is still running, and the drag would die halfway out. The
+    /// lists are refreshed by `endDetach` once the mouse comes up.
+    /// Pulls a note out of the deck and runs the drag to completion.
+    ///
+    /// Returns only once the mouse has come up. The published lists are
+    /// refreshed at the very end rather than at the start: reloading first would
+    /// remove the card from the deck and tear down the view mid-gesture.
+    func detachByDragging(_ noteId: String, from point: NotePoint) {
+        guard var note = try? store.find(id: noteId), !note.isDetached else { return }
+        note.isDetached = true
+        // Reuse the last known frame so a note dragged out again comes back the
+        // size the user left it.
+        note.frame = note.frame ?? DetachedFrame.defaultFrame(around: point)
+        try? store.upsert(note)
+        if selectedNoteId == noteId { selectedNoteId = nil }
+        draggingNoteId = noteId
+
+        windows?.runDrag(noteId: noteId) { [weak self] in
+            self?.draggingNoteId = nil
+            self?.reload()
+        }
+    }
+
+    /// Puts a desktop note back into the dock. The window closes; the saved
+    /// frame is kept, so dragging it out again returns it to the same spot.
+    func returnToDock(_ noteId: String) {
+        guard var note = anyNote(noteId) else { return }
+        note.isDetached = false
+        try? store.upsert(note)
+        windows?.close(noteId: noteId)
+        reload()
+    }
+
+    /// Reads through the store, never a published copy.
+    ///
+    /// The published lists are deliberately stale during a drag, and writing a
+    /// stale copy back would undo the `isDetached` flag that was just set.
+    func setFrame(_ frame: NoteFrame, for noteId: String) {
+        guard var note = try? store.find(id: noteId), note.frame != frame else { return }
+        note.frame = frame
+        try? store.upsert(note)
+        // Deliberately no reload(): a window move must not republish the whole
+        // list and rebuild every view while the user is still dragging.
+        replaceInPublishedLists(note)
+    }
+
+    // MARK: - Helpers
+
+    private func anyNote(_ id: String) -> Note? {
+        notes.first { $0.id == id }
+            ?? detachedNotes.first { $0.id == id }
+            ?? (try? store.find(id: id))
+    }
+
+    private func replaceInPublishedLists(_ note: Note) {
+        if let index = notes.firstIndex(where: { $0.id == note.id }) {
+            notes[index] = note
+        }
+        if let index = detachedNotes.firstIndex(where: { $0.id == note.id }) {
+            detachedNotes[index] = note
+        }
     }
 
     func unarchive(_ noteId: String) {

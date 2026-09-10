@@ -73,14 +73,22 @@ struct DockContentView: View {
             .padding(.bottom, 6)
 
             if state.notes.isEmpty {
-                emptyState
+                emptyState(detachedCount: state.detachedNotes.count)
             } else {
+                // A gesture nobody knows about does not exist.
+                Text("Drag a note out to put it on the desktop")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 4)
+
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 8) {
                         ForEach(Array(state.notes.enumerated()), id: \.element.id) { index, note in
                             NoteCardView(note: note, isTop: index == 0) {
                                 state.selectedNoteId = note.id
                             }
+                            .environmentObject(state)
                         }
                     }
                     .padding(.horizontal, 10)
@@ -105,11 +113,18 @@ struct DockContentView: View {
         )
     }
 
-    private var emptyState: some View {
+    private func emptyState(detachedCount: Int) -> some View {
         VStack(spacing: 8) {
             Spacer()
             Image(systemName: "note.text").font(.system(size: 26)).foregroundStyle(.tertiary)
-            Text("No notes yet").font(.system(size: 12)).foregroundStyle(.secondary)
+            // An empty deck means something different when notes are on the
+            // desktop. Saying "no notes yet" there would just be wrong.
+            Text(detachedCount == 0
+                 ? "No notes yet"
+                 : "All \(detachedCount) notes are on the desktop")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             Button("New note") { state.newNote() }
                 .controlSize(.small)
             Spacer()

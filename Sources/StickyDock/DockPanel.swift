@@ -76,6 +76,13 @@ final class DockPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Take focus on a click, never on a hover.
+    ///
+    /// macOS only delivers a continuous mouse-drag stream to the **active**
+    /// application. A background app gets the mouse-down and the mouse-up and
+    /// nothing in between, which is exactly enough for a button and not nearly
+    /// enough to drag a note out of the deck. Hovering still takes nothing, so
+    /// glancing at your notes never pulls you out of what you were doing.
     // MARK: - Geometry
 
     /// Re-anchors the panel to the right edge at whatever size the current state
@@ -121,6 +128,14 @@ final class DockPanel: NSPanel {
         guard !state.isExpanded else { return }
         state.isExpanded = true
         layoutForCurrentState()
+        // Become key on hover, but never activate the app. SwiftUI will not run a
+        // drag gesture in a window that is not key, so without this a note cannot
+        // be dragged out of the deck at all. Doing it here rather than on
+        // mouse-down matters: making a window key in the middle of dispatching a
+        // mouse-down swallows that event, the gesture never starts, and every
+        // drag that follows is ignored. A key panel in an inactive app still
+        // receives no keystrokes, so nothing is stolen from the app in front.
+        makeKeyAndOrderFront(nil)
     }
 
     /// A short grace period, so nudging the pointer a few pixels past the edge
@@ -138,38 +153,8 @@ final class DockPanel: NSPanel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
-    /// Puts the caret in the note's text view.
-    ///
-    /// SwiftUI's `@FocusState` is not enough on its own here. The editor sets it
-    /// in `onAppear`, which runs before this panel has become key, so AppKit
-    /// discards the request and the first responder stays the panel. Typing then
-    /// goes to whatever app the user was in before, which is worse than nothing.
-    ///
-    /// So the text view is found and focused directly. The retry exists because
-    /// SwiftUI builds its `NSTextView` on a later run loop pass, so the first
-    /// look usually finds nothing.
-    private func focusEditor(attemptsLeft: Int = 8) {
-        if let textView = Self.firstTextView(in: contentView) {
-            makeFirstResponder(textView)
-            return
-        }
-        guard attemptsLeft > 0 else {
-            NSLog("StickyDock: gave up looking for the note text view.")
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
-            guard self?.state.selectedNoteId != nil else { return }
-            self?.focusEditor(attemptsLeft: attemptsLeft - 1)
-        }
-    }
-
-    private static func firstTextView(in view: NSView?) -> NSTextView? {
-        guard let view else { return nil }
-        if let textView = view as? NSTextView, textView.isEditable { return textView }
-        for subview in view.subviews {
-            if let found = firstTextView(in: subview) { return found }
-        }
-        return nil
+    private func focusEditor() {
+        TextViewFocus.focus(in: self) { [weak self] in self?.state.selectedNoteId != nil }
     }
 
     func openEditor(for noteId: String) {

@@ -24,6 +24,18 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
     /// Archived, not deleted. Archived notes stay searchable and recoverable.
     public var archivedAt: Date?
     public var sortIndex: Int
+    /// True when the note has been dragged out of the dock and lives in its own
+    /// window on the desktop.
+    ///
+    /// This and the frame below are per-Mac display state, deliberately kept out
+    /// of the iCloud sidecar: screen layouts differ between machines, so a window
+    /// position is not something that should travel.
+    public var isDetached: Bool
+    public var frameX: Double?
+    public var frameY: Double?
+    public var frameWidth: Double?
+    public var frameHeight: Double?
+
     /// The content hash as of the last successful sync in either direction.
     /// This, not a timestamp, is what stops a push from looking like a remote
     /// change on the next poll. Nil means never synced.
@@ -31,6 +43,20 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
 
     public var isArchived: Bool { archivedAt != nil }
     public var title: String { NoteHTML.title(of: text) }
+
+    /// The saved window rectangle, or nil if this note has never been detached.
+    public var frame: NoteFrame? {
+        get {
+            guard let frameX, let frameY, let frameWidth, let frameHeight else { return nil }
+            return NoteFrame(x: frameX, y: frameY, width: frameWidth, height: frameHeight)
+        }
+        set {
+            frameX = newValue?.x
+            frameY = newValue?.y
+            frameWidth = newValue?.width
+            frameHeight = newValue?.height
+        }
+    }
 
     public init(
         id: String = UUID().uuidString,
@@ -41,6 +67,8 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
         updatedAt: Date = Date(),
         archivedAt: Date? = nil,
         sortIndex: Int = 0,
+        isDetached: Bool = false,
+        frame: NoteFrame? = nil,
         syncedHash: String? = nil
     ) {
         self.id = id
@@ -51,6 +79,11 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
         self.updatedAt = updatedAt
         self.archivedAt = archivedAt
         self.sortIndex = sortIndex
+        self.isDetached = isDetached
+        self.frameX = frame?.x
+        self.frameY = frame?.y
+        self.frameWidth = frame?.width
+        self.frameHeight = frame?.height
         self.syncedHash = syncedHash
     }
 }

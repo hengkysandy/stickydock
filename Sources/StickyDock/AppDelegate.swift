@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: DockPanel?
     private var coordinator: SyncCoordinator?
     private var allNotes: AllNotesWindow?
+    private var stickyWindows: StickyWindowManager?
     private var hotKey: HotKey?
     private var cancellables = Set<AnyCancellable>()
 
@@ -43,6 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak panel] noteId in panel?.selectionChanged(to: noteId) }
             .store(in: &cancellables)
 
+        // Desktop windows come back before the first sync, so notes that were on
+        // screen at quit are on screen at launch.
+        let windows = StickyWindowManager(state: state)
+        state.windows = windows
+        stickyWindows = windows
+        windows.restoreAll()
+
         EditMenu.install()
         setUpSync(state: state, store: store)
         setUpStatusItem()
@@ -59,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state?.flushPendingEdit()
         coordinator?.stop()
         hotKey?.unregister()
+        stickyWindows?.closeAll()
     }
 
     // MARK: - Wiring
@@ -127,6 +136,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         all.target = self
         menu.addItem(all)
 
+        // Desktop notes are floating windows with no Dock icon behind them, so
+        // there has to be a way to find one that ended up under something.
+        let front = NSMenuItem(
+            title: "Bring Desktop Notes to Front",
+            action: #selector(bringDesktopNotesToFront), keyEquivalent: ""
+        )
+        front.target = self
+        front.tag = Self.desktopNotesTag
+        menu.addItem(front)
+
         menu.addItem(.separator())
 
         let sync = NSMenuItem(title: "Sync Now", action: #selector(syncNow), keyEquivalent: "")
@@ -155,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static let statusLineTag = 991
+    private static let desktopNotesTag = 992
 
     // MARK: - Menu actions
 
@@ -166,6 +186,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showAllNotes() {
         allNotes?.show()
+    }
+
+    @objc private func bringDesktopNotesToFront() {
+        stickyWindows?.bringAllToFront()
     }
 
     @objc private func syncNow() {
@@ -191,10 +215,16 @@ extension AppDelegate: NSMenuDelegate {
     /// without passing it across an isolation boundary.
     nonisolated func menuWillOpen(_ menu: NSMenu) {
         MainActor.assumeIsolated {
-            guard let state,
-                  let line = statusItem?.menu?.items.first(where: { $0.tag == Self.statusLineTag })
-            else { return }
-            line.title = state.syncProblem ?? state.lastSyncSummary
+            guard let state, let items = statusItem?.menu?.items else { return }
+            items.first { $0.tag == Self.statusLineTag }?
+                .title = state.syncProblem ?? state.lastSyncSummary
+            if let front = items.first(where: { $0.tag == Self.desktopNotesTag }) {
+                let count = stickyWindows?.openCount ?? 0
+                front.isHidden = count == 0
+                front.title = count == 1
+                    ? "Bring 1 Desktop Note to Front"
+                    : "Bring \(count) Desktop Notes to Front"
+            }
         }
     }
 }
