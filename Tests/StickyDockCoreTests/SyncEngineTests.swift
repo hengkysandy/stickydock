@@ -21,7 +21,8 @@ struct SyncEnginePlanTests {
     }
 
     private func remote(_ text: String, id: String = "remote-1") -> RemoteNote {
-        RemoteNote(id: id, title: NoteHTML.title(of: text), text: text, modifiedAt: Date())
+        RemoteNote(id: id, title: NoteHTML.title(of: text), text: text,
+                   body: NoteHTML.toHTML(text), modifiedAt: Date())
     }
 
     // MARK: - The table
@@ -270,6 +271,87 @@ struct SyncEngineRunTests {
         let remoteTexts = bridge.current.map(\.text)
         #expect(remoteTexts.contains("mac edit"))
         #expect(remoteTexts.contains { $0.contains("phone edit") })
+    }
+
+    @Test func aFormattingOnlyChangeIsStillPushed() throws {
+        // The plain text is identical, so no hash can see this. Only the flag can.
+        let text = "make this bold"
+        let (engine, store, bridge, dir) = try makeEngine(
+            notes: [Note(id: "l1", notesId: "r1", text: text,
+                         styleRuns: [TextStyleRun(location: 5, length: 4, bold: true)],
+                         styleDirty: true,
+                         syncedHash: ContentHash.of(text))],
+            remote: [RemoteNote(id: "r1", title: text, text: text,
+                                body: NoteHTML.toHTML(text), modifiedAt: Date())]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        #expect(try engine.runOnce().pushed == 1)
+        #expect(bridge.current.first?.body.contains("<b>this</b>") == true)
+        #expect(try store.find(id: "l1")?.styleDirty == false)
+    }
+
+    @Test func aFormattingOnlyPushSettlesAndDoesNotRepeat() throws {
+        let text = "make this bold"
+        let (engine, _, dir) = try {
+            let (e, s, _, d) = try makeEngine(
+                notes: [Note(id: "l1", notesId: "r1", text: text,
+                             styleRuns: [TextStyleRun(location: 5, length: 4, bold: true)],
+                             styleDirty: true, syncedHash: ContentHash.of(text))],
+                remote: [RemoteNote(id: "r1", title: text, text: text,
+                                    body: NoteHTML.toHTML(text), modifiedAt: Date())]
+            )
+            return (e, s, d)
+        }()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        _ = try engine.runOnce()
+        #expect(try engine.runOnce() == SyncReport(), "the second pass must do nothing")
+    }
+
+    @Test func formattingComesBackWhenARemoteNoteIsPulled() throws {
+        let text = "bold word here"
+        let rich = RichText(text: text,
+                            runs: [TextStyleRun(location: 0, length: 4, bold: true)])
+        let (engine, store, _, dir) = try makeEngine(
+            notes: [Note(id: "l1", notesId: "r1", text: "old",
+                         syncedHash: ContentHash.of("old"))],
+            remote: [RemoteNote(id: "r1", title: text, text: text,
+                                body: NoteHTML.toHTML(rich), modifiedAt: Date())]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        #expect(try engine.runOnce().pulled == 1)
+        #expect(try store.find(id: "l1")?.styleRuns
+                == [TextStyleRun(location: 0, length: 4, bold: true)])
+    }
+
+    @Test func formattingComesAlongWhenARemoteNoteIsAdopted() throws {
+        let rich = RichText(text: "under me",
+                            runs: [TextStyleRun(location: 0, length: 5, underline: true)])
+        let (engine, store, _, dir) = try makeEngine(
+            remote: [RemoteNote(id: "r1", title: "under me", text: "under me",
+                                body: NoteHTML.toHTML(rich), modifiedAt: Date())]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        _ = try engine.runOnce()
+        #expect(try store.find(notesId: "r1")?.styleRuns
+                == [TextStyleRun(location: 0, length: 5, underline: true)])
+    }
+
+    @Test func aNoteWithFormattingSyncsWithoutLooping() throws {
+        let rich = RichText(text: "keep this steady",
+                            runs: [TextStyleRun(location: 5, length: 4, italic: true)])
+        var note = Note(id: "l1", text: rich.text)
+        note.styleRuns = rich.runs
+        let (engine, _, bridge, dir) = try makeEngine(notes: [note])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        _ = try engine.runOnce()
+        #expect(try engine.runOnce() == SyncReport())
+        #expect(try engine.runOnce() == SyncReport())
+        #expect(bridge.current.first?.body.contains("<i>this</i>") == true)
     }
 
     @Test func remoteEditIsPulledIntoTheLocalCache() throws {

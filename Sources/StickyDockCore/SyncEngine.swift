@@ -93,6 +93,7 @@ public final class SyncEngine: @unchecked Sendable {
 
         var actions: [SyncAction] = []
         var claimed = Set<String>()
+        func append(_ action: SyncAction) { actions.append(action) }
 
         for note in local {
             guard let notesId = note.notesId else {
@@ -132,7 +133,9 @@ public final class SyncEngine: @unchecked Sendable {
 
             switch (localChanged, remoteChanged) {
             case (false, false):
-                actions.append(.none(noteId: note.id))
+                // The plain text agrees, but the formatting may not have been
+                // sent yet. Hashes cannot see that, so the flag has to.
+                append(note.styleDirty ? .push(noteId: note.id) : .none(noteId: note.id))
             case (true, false):
                 actions.append(.push(noteId: note.id))
             case (false, true):
@@ -176,10 +179,11 @@ public final class SyncEngine: @unchecked Sendable {
                 guard var note = try store.find(id: noteId) else { break }
                 let created = try bridge.create(
                     account: account, folder: folder,
-                    text: note.text, knownIds: remote.map(\.id)
+                    rich: note.rich, knownIds: remote.map(\.id)
                 )
                 note.notesId = created.id
                 note.syncedHash = ContentHash.of(created.text)
+                note.styleDirty = false
                 try store.upsert(note)
                 sheet.entries[created.id] = SidecarEntry(
                     color: note.color, sortIndex: note.sortIndex, updatedAt: Date()
@@ -189,9 +193,10 @@ public final class SyncEngine: @unchecked Sendable {
             case .push(let noteId):
                 guard var note = try store.find(id: noteId), let notesId = note.notesId else { break }
                 let updated = try bridge.update(
-                    account: account, folder: folder, id: notesId, text: note.text
+                    account: account, folder: folder, id: notesId, rich: note.rich
                 )
                 note.syncedHash = ContentHash.of(updated.text)
+                note.styleDirty = false
                 try store.upsert(note)
                 sheet.entries[notesId] = SidecarEntry(
                     color: note.color, sortIndex: note.sortIndex, updatedAt: Date()
@@ -202,6 +207,8 @@ public final class SyncEngine: @unchecked Sendable {
                 guard var note = try store.find(id: noteId),
                       let incoming = remote.first(where: { $0.id == notesId }) else { break }
                 note.text = incoming.text
+                note.styleRuns = incoming.styleRuns
+                note.styleDirty = false
                 note.updatedAt = incoming.modifiedAt
                 note.syncedHash = ContentHash.of(incoming.text)
                 try store.upsert(note)
@@ -217,6 +224,7 @@ public final class SyncEngine: @unchecked Sendable {
                     createdAt: incoming.modifiedAt,
                     updatedAt: incoming.modifiedAt,
                     sortIndex: entry?.sortIndex ?? (try store.nextSortIndex()),
+                    styleRuns: incoming.styleRuns,
                     syncedHash: ContentHash.of(incoming.text)
                 ))
                 report.adopted += 1
@@ -258,6 +266,7 @@ public final class SyncEngine: @unchecked Sendable {
                       let incoming = remote.first(where: { $0.id == notesId }) else { break }
                 note.archivedAt = nil
                 note.text = incoming.text
+                note.styleRuns = incoming.styleRuns
                 note.updatedAt = incoming.modifiedAt
                 note.syncedHash = ContentHash.of(incoming.text)
                 try store.upsert(note)

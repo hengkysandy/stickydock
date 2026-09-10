@@ -5,23 +5,19 @@ struct NoteEditorView: View {
     @EnvironmentObject private var state: AppState
     let note: Note
 
-    @State private var text: String = ""
+    @State private var rich = RichText(text: "")
     @State private var confirmingDelete = false
-    @FocusState private var editorFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider().opacity(0.25)
 
-            TextEditor(text: $text)
-                .font(.system(size: 13))
-                .scrollContentBackground(.hidden)
-                .focused($editorFocused)
-                .padding(8)
-                .foregroundStyle(Theme.ink)
-                .onChange(of: text) { _, new in
-                    state.updateText(new, for: note.id)
+            RichTextEditorView(rich: $rich, textColor: Theme.inkNS, focusOnAppear: true)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 4)
+                .onChange(of: rich) { _, new in
+                    state.updateRich(new, for: note.id)
                 }
 
             Divider().opacity(0.25)
@@ -29,17 +25,14 @@ struct NoteEditorView: View {
         }
         .background(Theme.fill(note.color))
         .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-        .onAppear {
-            text = note.text
-            editorFocused = true
-        }
+        .onAppear { rich = note.rich }
         // Switching notes without closing the editor must load the new text.
-        .onChange(of: note.id) { _, _ in text = note.text }
+        .onChange(of: note.id) { _, _ in rich = note.rich }
         // A sync can rewrite this note while the editor sits open. Without this
         // the editor keeps showing text that is no longer what is stored, and
         // the next keystroke pushes the stale version back out.
-        .onChange(of: note.text) { _, incoming in
-            if incoming != text { text = incoming }
+        .onChange(of: note.rich) { _, incoming in
+            if incoming != rich { rich = incoming }
         }
         .confirmationDialog(
             "Delete this note for good?",

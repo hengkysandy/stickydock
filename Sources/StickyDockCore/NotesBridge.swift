@@ -5,11 +5,21 @@ public struct RemoteNote: Codable, Equatable, Sendable {
     public var id: String
     public var title: String
     public var text: String
+    /// The raw HTML body. Never read for its characters, only for the positions
+    /// of the `<b>`, `<i>` and `<u>` tags.
+    public var body: String
     public var modifiedAt: Date
 
-    public init(id: String, title: String, text: String, modifiedAt: Date) {
+    /// Formatting recovered from the body, aligned against the plain text.
+    /// Empty when the two do not agree, which is the safe answer.
+    public var styleRuns: [TextStyleRun] {
+        NoteHTML.styleRuns(fromBody: body, plainText: text)
+    }
+
+    public init(id: String, title: String, text: String, body: String = "", modifiedAt: Date) {
         self.id = id
         self.title = title
+        self.body = body
         // Notes appends a trailing newline to every body it stores. Left alone,
         // that one character makes every freshly pushed note look changed on the
         // next poll, and the app would sync in a loop for ever.
@@ -54,8 +64,8 @@ public enum NotesBridgeError: Error, Equatable, CustomStringConvertible {
 public protocol NotesBridging: Sendable {
     func ensureFolder(account: String, folder: String) throws
     func list(account: String, folder: String) throws -> [RemoteNote]
-    func create(account: String, folder: String, text: String, knownIds: [String]) throws -> RemoteNote
-    func update(account: String, folder: String, id: String, text: String) throws -> RemoteNote
+    func create(account: String, folder: String, rich: RichText, knownIds: [String]) throws -> RemoteNote
+    func update(account: String, folder: String, id: String, rich: RichText) throws -> RemoteNote
     func delete(account: String, folder: String, id: String) throws
 }
 
@@ -96,21 +106,21 @@ public final class NotesBridge: NotesBridging, @unchecked Sendable {
     }
 
     public func create(
-        account: String, folder: String, text: String, knownIds: [String]
+        account: String, folder: String, rich: RichText, knownIds: [String]
     ) throws -> RemoteNote {
         let reply = try call([
             "op": "create", "account": account, "folder": folder,
-            "html": NoteHTML.toHTML(text), "knownIds": knownIds,
+            "html": NoteHTML.toHTML(rich), "knownIds": knownIds,
         ])
         return try Self.decodeSingle(reply)
     }
 
     public func update(
-        account: String, folder: String, id: String, text: String
+        account: String, folder: String, id: String, rich: RichText
     ) throws -> RemoteNote {
         let reply = try call([
             "op": "update", "account": account, "folder": folder,
-            "id": id, "html": NoteHTML.toHTML(text),
+            "id": id, "html": NoteHTML.toHTML(rich),
         ])
         return try Self.decodeSingle(reply)
     }
@@ -208,6 +218,7 @@ public final class NotesBridge: NotesBridging, @unchecked Sendable {
             id: id,
             title: raw["title"] as? String ?? NoteHTML.title(of: text),
             text: text,
+            body: raw["body"] as? String ?? "",
             modifiedAt: modified
         )
     }

@@ -45,7 +45,7 @@ struct NotesBridgeLiveTests {
 
         let text = "Live test title\n\nampersand & less < greater > percent 100%"
         let created = try bridge.create(
-            account: account, folder: folder, text: text, knownIds: []
+            account: account, folder: folder, rich: RichText(text: text), knownIds: []
         )
         #expect(created.text == text, "text must survive the HTML round trip exactly")
         #expect(created.title == "Live test title")
@@ -58,7 +58,7 @@ struct NotesBridgeLiveTests {
 
         let newText = "Renamed\nsecond line"
         let updated = try bridge.update(
-            account: account, folder: folder, id: created.id, text: newText
+            account: account, folder: folder, id: created.id, rich: RichText(text: newText)
         )
         #expect(updated.id == created.id, "the id must survive an edit")
         #expect(updated.text == newText)
@@ -73,9 +73,9 @@ struct NotesBridgeLiveTests {
         try emptyFolder(bridge)
         defer { try? emptyFolder(bridge) }
 
-        let first = try bridge.create(account: account, folder: folder, text: "one", knownIds: [])
+        let first = try bridge.create(account: account, folder: folder, rich: RichText(text: "one"), knownIds: [])
         let second = try bridge.create(
-            account: account, folder: folder, text: "two", knownIds: [first.id]
+            account: account, folder: folder, rich: RichText(text: "two"), knownIds: [first.id]
         )
         #expect(first.id != second.id)
         #expect(second.text == "two")
@@ -90,10 +90,71 @@ struct NotesBridgeLiveTests {
         defer { try? emptyFolder(bridge) }
 
         let text = "Loop check\nline two\n\nline four & <five>"
-        let created = try bridge.create(account: account, folder: folder, text: text, knownIds: [])
+        let created = try bridge.create(account: account, folder: folder, rich: RichText(text: text), knownIds: [])
         let listed = try bridge.list(account: account, folder: folder).first
         #expect(ContentHash.of(created.text) == ContentHash.of(text))
         #expect(ContentHash.of(listed?.text ?? "") == ContentHash.of(text))
+    }
+
+    @Test func boldItalicAndUnderlineSurviveAppleNotes() throws {
+        // The claim this feature rests on: formatting written here is kept by
+        // Apple Notes, so it renders on the iPhone. Proven against the real app,
+        // not against a fake.
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let rich = RichText(text: "Style check\nbold italic under & plain", runs: [
+            TextStyleRun(location: 12, length: 4, bold: true),
+            TextStyleRun(location: 17, length: 6, italic: true),
+            TextStyleRun(location: 24, length: 5, underline: true),
+        ])
+        let created = try bridge.create(
+            account: account, folder: folder, rich: rich, knownIds: []
+        )
+        #expect(created.text == rich.text)
+        #expect(created.styleRuns == rich.runs, "formatting must come back unchanged")
+
+        let listed = try #require(try bridge.list(account: account, folder: folder).first)
+        #expect(listed.styleRuns == rich.runs)
+    }
+
+    @Test func combinedStylesSurviveAppleNotes() throws {
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let rich = RichText(text: "all three here", runs: [
+            TextStyleRun(location: 0, length: 9, bold: true, italic: true, underline: true),
+        ])
+        let created = try bridge.create(
+            account: account, folder: folder, rich: rich, knownIds: []
+        )
+        #expect(created.styleRuns == rich.runs)
+    }
+
+    @Test func editingAFormattedNoteKeepsTheFormatting() throws {
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let first = try bridge.create(
+            account: account, folder: folder,
+            rich: RichText(text: "one two", runs: [TextStyleRun(location: 0, length: 3, bold: true)]),
+            knownIds: []
+        )
+        let second = RichText(
+            text: "one two three",
+            runs: [TextStyleRun(location: 8, length: 5, underline: true)]
+        )
+        let updated = try bridge.update(
+            account: account, folder: folder, id: first.id, rich: second
+        )
+        #expect(updated.text == second.text)
+        #expect(updated.styleRuns == second.runs)
     }
 
     @Test func unknownAccountReportsAClearError() throws {

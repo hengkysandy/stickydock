@@ -50,7 +50,7 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
     }
 
     private static var migrationsInOrder: [(String, @Sendable (Database) throws -> Void)] {
-        [("v1-notes", v1), ("v2-detached-windows", v2)]
+        [("v1-notes", v1), ("v2-detached-windows", v2), ("v3-text-styles", v3)]
     }
 
     @Sendable private static func v1(_ db: Database) throws {
@@ -106,6 +106,13 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
                     """,
                 arguments: [noteId, text, Date(), Date()]
             )
+        }
+    }
+
+    @Sendable private static func v3(_ db: Database) throws {
+        try db.alter(table: "note") { t in
+            t.add(column: "styleRunsJSON", .text)
+            t.add(column: "styleDirty", .boolean).notNull().defaults(to: false)
         }
     }
 

@@ -9,10 +9,9 @@ struct StickyNoteView: View {
     @EnvironmentObject private var state: AppState
     let noteId: String
 
-    @State private var text = ""
+    @State private var rich = RichText(text: "")
     @State private var showChrome = false
     @State private var confirmingDelete = false
-    @FocusState private var focused: Bool
 
     /// Read through `AppState`, not straight out of `detachedNotes`. During the
     /// drag out of the deck that list has not been refreshed yet, so this note is
@@ -27,34 +26,27 @@ struct StickyNoteView: View {
 
             VStack(spacing: 0) {
                 dragStrip
-                TextEditor(text: $text)
-                    .font(.system(size: 13))
-                    .scrollContentBackground(.hidden)
-                    .focused($focused)
-                    .foregroundStyle(Theme.ink)
-                    // Without an explicit greedy frame the editor takes its own
-                    // narrow intrinsic width and every word wraps onto its own
-                    // line, which looks broken at a glance.
+                RichTextEditorView(rich: $rich, textColor: Theme.inkNS)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
                     .padding(.bottom, 4)
-                    .onChange(of: text) { _, new in
-                        state.updateText(new, for: noteId)
+                    .onChange(of: rich) { _, new in
+                        state.updateRich(new, for: noteId)
                     }
                 if showChrome { colorStrip }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear { text = note?.text ?? "" }
+        .onAppear { rich = note?.rich ?? RichText(text: "") }
         // The window is built before the lists refresh, so seed the text again
         // once the note becomes visible to SwiftUI's change tracking.
         .onChange(of: note?.id) { _, _ in
-            if text.isEmpty { text = note?.text ?? "" }
+            if rich.text.isEmpty { rich = note?.rich ?? RichText(text: "") }
         }
         // A sync can rewrite this note while the window sits open. Without this
         // the window would keep showing text that is no longer what is stored.
-        .onChange(of: note?.text ?? "") { _, incoming in
-            if incoming != text { text = incoming }
+        .onChange(of: note?.rich) { _, incoming in
+            if let incoming, incoming != rich { rich = incoming }
         }
         .onHover { showChrome = $0 }
         .confirmationDialog(

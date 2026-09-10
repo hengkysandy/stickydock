@@ -11,6 +11,26 @@ import AppKit
 /// The items target `nil`, so AppKit sends them to whatever holds first
 /// responder, which is the note's text view.
 enum EditMenu {
+
+    /// Bold, italic and underline. The actions target `nil` so AppKit sends them
+    /// to the first responder, which is the note's text view.
+    private static func formatItem() -> NSMenuItem {
+        let item = NSMenuItem()
+        let menu = NSMenu(title: "Format")
+        let entries: [(String, Selector, String)] = [
+            ("Bold", #selector(NoteTextView.toggleBold(_:)), "b"),
+            ("Italic", #selector(NoteTextView.toggleItalic(_:)), "i"),
+            ("Underline", #selector(NoteTextView.toggleUnderlineStyle(_:)), "u"),
+        ]
+        for (title, action, key) in entries {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            entry.keyEquivalentModifierMask = [.command]
+            menu.addItem(entry)
+        }
+        item.submenu = menu
+        return item
+    }
+
     static func install() {
         let main = NSMenu()
 
@@ -42,8 +62,35 @@ enum EditMenu {
             item.keyEquivalentModifierMask = modifiers
             edit.addItem(item)
         }
+        // The system find bar, on the standard shortcut. NSTextView provides the
+        // whole interface; it just has to be asked for it through a menu item,
+        // because that is how AppKit routes ⌘F.
+        edit.addItem(.separator())
+        let find = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        let findSubmenu = NSMenu(title: "Find")
+        let findEntries: [(String, Int, String, NSEvent.ModifierFlags)] = [
+            ("Find…", NSTextFinder.Action.showFindInterface.rawValue, "f", [.command]),
+            ("Find Next", NSTextFinder.Action.nextMatch.rawValue, "g", [.command]),
+            ("Find Previous", NSTextFinder.Action.previousMatch.rawValue, "g", [.command, .shift]),
+            ("Use Selection for Find", NSTextFinder.Action.setSearchString.rawValue, "e", [.command]),
+            ("Hide Find Bar", NSTextFinder.Action.hideFindInterface.rawValue, "", []),
+        ]
+        for (title, tag, key, modifiers) in findEntries {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(NSTextView.performTextFinderAction(_:)),
+                keyEquivalent: key
+            )
+            item.tag = tag
+            item.keyEquivalentModifierMask = modifiers
+            findSubmenu.addItem(item)
+        }
+        find.submenu = findSubmenu
+        edit.addItem(find)
+
         editItem.submenu = edit
         main.addItem(editItem)
+        main.addItem(formatItem())
 
         NSApp.mainMenu = main
     }

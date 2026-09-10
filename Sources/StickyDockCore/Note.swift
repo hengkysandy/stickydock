@@ -36,6 +36,19 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
     public var frameWidth: Double?
     public var frameHeight: Double?
 
+    /// Bold, italic and underline ranges, stored as JSON.
+    ///
+    /// Held as an encoded string rather than a typed column because SQLite has
+    /// nowhere to put an array, and this is never queried, only read whole.
+    public var styleRunsJSON: String?
+    /// Set when only the formatting changed.
+    ///
+    /// Sync decisions are made on the hash of the plain text, deliberately: the
+    /// formatting recovered from a note body is best-effort, and hashing it
+    /// would risk a sync loop. A formatting-only edit changes no plain text, so
+    /// it needs this flag to be noticed at all.
+    public var styleDirty: Bool
+
     /// The content hash as of the last successful sync in either direction.
     /// This, not a timestamp, is what stops a push from looking like a remote
     /// change on the next poll. Nil means never synced.
@@ -43,6 +56,28 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
 
     public var isArchived: Bool { archivedAt != nil }
     public var title: String { NoteHTML.title(of: text) }
+
+    public var styleRuns: [TextStyleRun] {
+        get {
+            guard let styleRunsJSON, let data = styleRunsJSON.data(using: .utf8) else { return [] }
+            return (try? JSONDecoder().decode([TextStyleRun].self, from: data)) ?? []
+        }
+        set {
+            guard !newValue.isEmpty, let data = try? JSONEncoder().encode(newValue) else {
+                styleRunsJSON = nil
+                return
+            }
+            styleRunsJSON = String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    public var rich: RichText {
+        get { RichText(text: text, runs: styleRuns) }
+        set {
+            text = newValue.text
+            styleRuns = newValue.runs
+        }
+    }
 
     /// The saved window rectangle, or nil if this note has never been detached.
     public var frame: NoteFrame? {
@@ -69,6 +104,8 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
         sortIndex: Int = 0,
         isDetached: Bool = false,
         frame: NoteFrame? = nil,
+        styleRuns: [TextStyleRun] = [],
+        styleDirty: Bool = false,
         syncedHash: String? = nil
     ) {
         self.id = id
@@ -84,6 +121,9 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
         self.frameY = frame?.y
         self.frameWidth = frame?.width
         self.frameHeight = frame?.height
+        self.styleRunsJSON = nil
+        self.styleDirty = styleDirty
         self.syncedHash = syncedHash
+        self.styleRuns = styleRuns
     }
 }

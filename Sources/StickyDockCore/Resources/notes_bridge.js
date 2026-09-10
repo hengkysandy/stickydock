@@ -62,7 +62,10 @@ function describe(note) {
   return {
     id: note.id(),
     title: note.name(),
+    // plaintext is the authority for the characters: the body getter corrupts
+    // entities. The body comes along only so formatting ranges can be recovered.
     text: note.plaintext(),
+    body: note.body(),
     modifiedAt: iso(note.modificationDate())
   };
 }

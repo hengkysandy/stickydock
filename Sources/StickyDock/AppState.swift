@@ -70,10 +70,14 @@ final class AppState: ObservableObject {
 
     /// Writes are debounced. Every keystroke hitting SQLite would be wasteful,
     /// and every keystroke triggering a sync would hammer Apple Events.
-    func updateText(_ text: String, for noteId: String) {
+    func updateRich(_ rich: RichText, for noteId: String) {
         guard var note = anyNote(noteId) else { return }
-        guard note.text != text else { return }
-        note.text = text
+        guard note.rich != rich else { return }
+        // The plain text may be identical while only the formatting moved. Sync
+        // decides on the hash of the plain text, so that case has to be flagged
+        // or it would never be sent.
+        if note.text == rich.text { note.styleDirty = true }
+        note.rich = rich
         note.updatedAt = Date()
         replaceInPublishedLists(note)
         saveTask?.cancel()

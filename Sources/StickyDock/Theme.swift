@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import StickyDockCore
 
@@ -19,6 +20,8 @@ enum Theme {
     /// Fixed rather than semantic on purpose: the card keeps its colour in dark
     /// mode, so a colour that follows the system theme would go invisible.
     static let ink = Color(red: 0.13, green: 0.13, blue: 0.15)
+    /// The same ink, for the AppKit text view.
+    static let inkNS = NSColor(red: 0.13, green: 0.13, blue: 0.15, alpha: 1)
     static let inkSoft = Color(red: 0.13, green: 0.13, blue: 0.15).opacity(0.55)
 
     static let cardRadius: CGFloat = 10

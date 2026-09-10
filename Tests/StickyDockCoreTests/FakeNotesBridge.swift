@@ -42,13 +42,17 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
         return current
     }
 
-    func create(account: String, folder: String, text: String, knownIds: [String]) throws -> RemoteNote {
-        try record(.create(text: text))
+    func create(account: String, folder: String, rich: RichText, knownIds: [String]) throws -> RemoteNote {
+        try record(.create(text: rich.text))
         return lock.withLock {
+            // Serialise and parse back, exactly as the real bridge does, so the
+            // fake cannot quietly hide a formatting round-trip bug.
+            let html = NoteHTML.toHTML(rich)
             let note = RemoteNote(
                 id: "x-coredata://fake/ICNote/p\(nextId)",
-                title: NoteHTML.title(of: text),
-                text: text,
+                title: NoteHTML.title(of: rich.text),
+                text: rich.text,
+                body: html,
                 modifiedAt: Date()
             )
             nextId += 1
@@ -57,12 +61,13 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
         }
     }
 
-    func update(account: String, folder: String, id: String, text: String) throws -> RemoteNote {
-        try record(.update(id: id, text: text))
+    func update(account: String, folder: String, id: String, rich: RichText) throws -> RemoteNote {
+        try record(.update(id: id, text: rich.text))
         return try lock.withLock {
             guard let existing = notes[id] else { throw NotesBridgeError.remote("no note \(id)") }
-            let note = RemoteNote(id: id, title: NoteHTML.title(of: text),
-                                  text: text, modifiedAt: Date())
+            let note = RemoteNote(id: id, title: NoteHTML.title(of: rich.text),
+                                  text: rich.text, body: NoteHTML.toHTML(rich),
+                                  modifiedAt: Date())
             notes[id] = note
             _ = existing
             return note

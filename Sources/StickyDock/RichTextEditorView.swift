@@ -1,0 +1,78 @@
+import AppKit
+import StickyDockCore
+import SwiftUI
+
+/// SwiftUI wrapper around `NoteTextView`.
+struct RichTextEditorView: NSViewRepresentable {
+    @Binding var rich: RichText
+    var textColor: NSColor = .black
+    /// Focus is taken when the note is opened deliberately, never when a note
+    /// merely appears on screen.
+    var focusOnAppear: Bool = false
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+
+        let textView = NoteTextView(frame: .zero)
+        textView.delegate = context.coordinator
+        textView.isRichText = true
+        textView.allowsUndo = true
+        textView.isEditable = true
+        textView.drawsBackground = false
+        textView.textColor = textColor
+        textView.insertionPointColor = textColor
+        textView.baseFont = .systemFont(ofSize: 13)
+        textView.font = textView.baseFont
+        textView.textContainerInset = NSSize(width: 2, height: 4)
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        // The system find bar. This is all ⌘F needs on the view's side; the menu
+        // item that triggers it is in `EditMenu`.
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        textView.noteContent = rich
+
+        if focusOnAppear {
+            DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NoteTextView else { return }
+        textView.textColor = textColor
+        textView.insertionPointColor = textColor
+        // Only write back when something really differs, or every keystroke
+        // would reset the text view from the binding and fight the typist.
+        if textView.noteContent != rich {
+            textView.noteContent = rich
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        private let parent: RichTextEditorView
+        weak var textView: NoteTextView?
+
+        init(_ parent: RichTextEditorView) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NoteTextView else { return }
+            parent.rich = textView.noteContent
+        }
+    }
+}
