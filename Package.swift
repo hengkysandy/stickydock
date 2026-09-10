@@ -14,7 +14,8 @@ let package = Package(
     targets: [
         .target(
             name: "StickyDockCore",
-            dependencies: [.product(name: "GRDB", package: "GRDB.swift")]
+            dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
+            resources: [.copy("Resources/notes_bridge.js")]
         ),
         .executableTarget(
             name: "StickyDock",
