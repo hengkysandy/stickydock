@@ -128,11 +128,12 @@ final class AppState: ObservableObject {
     /// remove the card from the deck, SwiftUI would tear down the very view whose
     /// drag gesture is still running, and the drag would die halfway out. The
     /// lists are refreshed by `endDetach` once the mouse comes up.
-    /// Pulls a note out of the deck and runs the drag to completion.
+    /// Pulls a note out of the deck and hands it to the drag.
     ///
-    /// Returns only once the mouse has come up. The published lists are
-    /// refreshed at the very end rather than at the start: reloading first would
-    /// remove the card from the deck and tear down the view mid-gesture.
+    /// Returns immediately; the drag finishes on its own. The published lists
+    /// are refreshed only when the mouse comes up, never at the start: reloading
+    /// first would remove the card from the deck and tear down the very view
+    /// whose gesture began all this.
     func detachByDragging(_ noteId: String, from point: NotePoint) {
         guard var note = try? store.find(id: noteId), !note.isDetached else { return }
         note.isDetached = true
@@ -143,7 +144,7 @@ final class AppState: ObservableObject {
         if selectedNoteId == noteId { selectedNoteId = nil }
         draggingNoteId = noteId
 
-        windows?.runDrag(noteId: noteId) { [weak self] in
+        windows?.beginDrag(noteId: noteId) { [weak self] in
             self?.draggingNoteId = nil
             self?.reload()
         }
@@ -173,6 +174,15 @@ final class AppState: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// Finds a note wherever it currently is.
+    ///
+    /// The published lists are deliberately stale for the length of a drag, so a
+    /// view that reads only from them sees nothing and falls back to defaults.
+    /// That is what made a note flash yellow and blank on its way out of the
+    /// deck. Falling through to the store makes the answer right at every moment
+    /// of the drag, and the published lists still drive redraws afterwards.
+    func note(withId id: String) -> Note? { anyNote(id) }
 
     private func anyNote(_ id: String) -> Note? {
         notes.first { $0.id == id }

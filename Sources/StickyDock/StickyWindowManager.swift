@@ -15,6 +15,12 @@ final class StickyWindowManager {
     /// instant the drag begins, and view-local state does not reliably survive
     /// that, so the window would be created and then stop following the pointer.
     private var draggingWindow: StickyNoteWindow?
+    private var dragTimer: Timer?
+    /// Held here rather than captured by the timer's closure. Swift 6 will not
+    /// let a non-isolated timer block carry a main-actor closure across the
+    /// boundary, and there is no need for it to.
+    private var dragCompletion: (@MainActor () -> Void)?
+    private var dragStartedAt = Date()
     private unowned let state: AppState
 
     init(state: AppState) {
@@ -57,20 +63,25 @@ final class StickyWindowManager {
 
     // MARK: - Dragging a note out of the deck
 
-    /// Runs the whole drag, from the moment the note leaves the deck to the
-    /// moment the mouse comes up, and returns only when it is over.
+    /// Starts a drag and returns immediately. `onDrop` runs when the mouse
+    /// comes up.
     ///
-    /// This is a nested AppKit event-tracking loop rather than a continuation of
-    /// the SwiftUI gesture, and that is not a stylistic choice. SwiftUI delivers
-    /// `onChanged` faithfully all the way across the screen and then never calls
-    /// `onEnded` at all once the note's own window is following the pointer, so
-    /// the drop position was never recorded and the note stayed pinned where it
-    /// was born. Pulling the events straight off the queue removes every part of
-    /// that problem: nothing can cancel this loop except the mouse coming up.
+    /// A timer rather than a nested `NSApp.nextEvent` tracking loop, and that
+    /// distinction is the whole reason this reads the way it does. The nested
+    /// loop worked, but it only ever dequeued mouse events, so nothing else in
+    /// the app got to run: the note being dragged rendered as a bare coloured
+    /// rectangle with no text in it until the moment it was dropped.
     ///
-    /// `onDrop` runs after the last event, on the main thread, before returning.
-    func runDrag(noteId: String, onDrop: () -> Void) {
-        guard let window = show(noteId: noteId) else { return }
+    /// It also cannot rely on SwiftUI's `onEnded`, which is never called once
+    /// the note's own window is under the pointer, so the release is detected by
+    /// asking the system whether the button is still held. That needs no
+    /// permission and cannot be swallowed by anything.
+    ///
+    /// The timer is added to `.common` modes on purpose. A plain scheduled timer
+    /// runs only in the default mode, and the run loop is in event-tracking mode
+    /// for the entire duration of a mouse drag, so it would never once fire.
+    func beginDrag(noteId: String, onDrop: @escaping @MainActor () -> Void) {
+        guard let window = show(noteId: noteId) else { onDrop(); return }
         window.isBeingDragged = true
         // The window lands directly under the pointer, and a window under the
         // pointer swallows the mouse events. Transparent for the length of the
@@ -79,26 +90,30 @@ final class StickyWindowManager {
         draggingWindow = window
         moveDrag(to: pointerLocation())
 
-        // A backstop, so a lost mouse-up can never leave the app stuck in here.
-        let deadline = Date().addingTimeInterval(60)
-        while Date() < deadline {
-            guard let event = NSApp.nextEvent(
-                matching: [.leftMouseDragged, .leftMouseUp],
-                until: Date().addingTimeInterval(0.5),
-                inMode: .eventTracking,
-                dequeue: true
-            ) else {
-                // No event for half a second. If the button is no longer held,
-                // the mouse-up happened somewhere we could not see it.
-                if NSEvent.pressedMouseButtons & 1 == 0 { break }
-                continue
-            }
-            if event.type == .leftMouseUp { break }
-            moveDrag(to: pointerLocation())
+        dragTimer?.invalidate()
+        dragCompletion = onDrop
+        dragStartedAt = Date()
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tickDrag() }
         }
+        dragTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
 
+    private func tickDrag() {
+        let stillHeld = NSEvent.pressedMouseButtons & 1 != 0
+        // The 60s cap is a backstop: a mouse-up that never arrives must not
+        // leave a note stuck to the pointer for ever.
+        if stillHeld, Date().timeIntervalSince(dragStartedAt) < 60 {
+            moveDrag(to: pointerLocation())
+            return
+        }
+        dragTimer?.invalidate()
+        dragTimer = nil
         endDrag()
-        onDrop()
+        let finish = dragCompletion
+        dragCompletion = nil
+        finish?()
     }
 
     func moveDrag(to point: NotePoint) {
@@ -131,6 +146,8 @@ final class StickyWindowManager {
     }
 
     func closeAll() {
+        dragTimer?.invalidate()
+        dragTimer = nil
         for id in windows.keys { close(noteId: id) }
     }
 

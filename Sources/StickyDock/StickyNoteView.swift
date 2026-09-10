@@ -14,11 +14,15 @@ struct StickyNoteView: View {
     @State private var confirmingDelete = false
     @FocusState private var focused: Bool
 
-    private var note: Note? { state.detachedNotes.first { $0.id == noteId } }
+    /// Read through `AppState`, not straight out of `detachedNotes`. During the
+    /// drag out of the deck that list has not been refreshed yet, so this note is
+    /// not in it, and the view would render with default colour and no text.
+    private var note: Note? { state.note(withId: noteId) }
+    private var color: NoteColor { note?.color ?? .grey }
 
     var body: some View {
         ZStack(alignment: .top) {
-            (note.map { Theme.fill($0.color) } ?? Theme.fill(.yellow))
+            Theme.fill(color)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -42,6 +46,11 @@ struct StickyNoteView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear { text = note?.text ?? "" }
+        // The window is built before the lists refresh, so seed the text again
+        // once the note becomes visible to SwiftUI's change tracking.
+        .onChange(of: note?.id) { _, _ in
+            if text.isEmpty { text = note?.text ?? "" }
+        }
         // A sync can rewrite this note while the window sits open. Without this
         // the window would keep showing text that is no longer what is stored.
         .onChange(of: note?.text ?? "") { _, incoming in
@@ -97,8 +106,8 @@ struct StickyNoteView: View {
                         .frame(width: 13, height: 13)
                         .overlay(
                             Circle().strokeBorder(
-                                note?.color == color ? Theme.ink : .black.opacity(0.18),
-                                lineWidth: note?.color == color ? 2 : 1
+                                self.color == color ? Theme.ink : .black.opacity(0.18),
+                                lineWidth: self.color == color ? 2 : 1
                             )
                         )
                 }
