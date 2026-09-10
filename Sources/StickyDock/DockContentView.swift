@@ -7,17 +7,19 @@ struct DockContentView: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
-        Group {
+        ZStack(alignment: .trailing) {
             if !state.isExpanded {
-                collapsedStripe
+                collapsedStripe.transition(.opacity)
             } else {
                 HStack(alignment: .top, spacing: 8) {
                     leftPane
                     tabColumn
                 }
+                .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .animation(.easeOut(duration: Theme.dockAnimation), value: state.isExpanded)
     }
 
     // MARK: - At rest
@@ -25,6 +27,8 @@ struct DockContentView: View {
     /// A 14pt stripe, one coloured dash per note. Deliberately tiny: it has to
     /// sit on the edge of the screen all day without asking for attention.
     private var collapsedStripe: some View {
+        // The window is a constant height, so the pill sizes itself to the notes
+        // and sits in the middle of it rather than filling the whole edge.
         VStack(spacing: 5) {
             Spacer(minLength: 6)
             ForEach(state.notes.prefix(14)) { note in
@@ -43,14 +47,21 @@ struct DockContentView: View {
             }
             Spacer(minLength: 6)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .frame(height: stripeHeight)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.ultraThinMaterial)
         )
+        .frame(maxHeight: .infinity, alignment: .center)
         .accessibilityElement()
         .accessibilityLabel(Text(
             "StickyDock, \(state.notes.count) notes. Move the pointer here to open."
         ))
+    }
+
+    private var stripeHeight: CGFloat {
+        let dashes = CGFloat(min(state.notes.count, 14))
+        return max(dashes * 19 + 20, 44)
     }
 
     // MARK: - Reached for
@@ -74,10 +85,12 @@ struct DockContentView: View {
                     .zIndex(state.selectedNoteId == note.id ? 100 : Double(-index))
                 }
             }
-            Spacer(minLength: 8)
-            newNoteButton
         }
-        .frame(width: Theme.tabWidth)
+        // Centred, so the tabs unfold from where the resting pill was instead of
+        // appearing at the top of the panel while the pill sits in the middle.
+        .frame(width: Theme.tabWidth, alignment: .center)
+        .frame(maxHeight: .infinity, alignment: .center)
+        .overlay(alignment: .bottomTrailing) { newNoteButton }
         .padding(.vertical, 10)
     }
 
@@ -139,7 +152,10 @@ struct DockContentView: View {
                 Spacer(minLength: 0)
             }
             .frame(width: Theme.peekWidth)
-            .transition(.opacity)
+            // No fade. The panel is resizing underneath at the same moment, and
+            // an interrupted opacity transition left the peek stuck part way
+            // through, showing the desktop straight through the note. The 300ms
+            // hover pause and the window resize already carry the movement.
             .allowsHitTesting(false)
         } else {
             Color.clear.frame(width: 0)

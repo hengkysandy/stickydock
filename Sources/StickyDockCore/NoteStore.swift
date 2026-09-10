@@ -16,6 +16,9 @@ public protocol NoteStoring: Sendable {
     func upsert(_ note: Note) throws
     func delete(id: String) throws
     func archive(id: String, at date: Date) throws
+    /// Marks a note deleted without removing the row, so the sync can still take
+    /// it out of Apple Notes.
+    func markDeleted(id: String, at date: Date) throws
     func search(_ query: String) throws -> [Note]
     func nextSortIndex() throws -> Int
 }
@@ -50,7 +53,8 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
     }
 
     private static var migrationsInOrder: [(String, @Sendable (Database) throws -> Void)] {
-        [("v1-notes", v1), ("v2-detached-windows", v2), ("v3-text-styles", v3)]
+        [("v1-notes", v1), ("v2-detached-windows", v2), ("v3-text-styles", v3),
+         ("v4-delete-tombstones", v4)]
     }
 
     @Sendable private static func v1(_ db: Database) throws {
@@ -116,11 +120,18 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
         }
     }
 
+    @Sendable private static func v4(_ db: Database) throws {
+        try db.alter(table: "note") { t in
+            t.add(column: "deletedAt", .datetime)
+        }
+        try db.create(index: "note_on_deletedAt", on: "note", columns: ["deletedAt"])
+    }
+
     // MARK: - Reads
 
     public func allActive() throws -> [Note] {
         try dbQueue.read { db in
-            try Note.filter(Column("archivedAt") == nil)
+            try Note.filter(Column("deletedAt") == nil && Column("archivedAt") == nil)
                 .order(Column("sortIndex").asc, Column("updatedAt").desc)
                 .fetchAll(db)
         }
@@ -128,7 +139,9 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
 
     public func allDocked() throws -> [Note] {
         try dbQueue.read { db in
-            try Note.filter(Column("archivedAt") == nil && Column("isDetached") == false)
+            try Note.filter(Column("deletedAt") == nil
+                            && Column("archivedAt") == nil
+                            && Column("isDetached") == false)
                 .order(Column("sortIndex").asc, Column("updatedAt").desc)
                 .fetchAll(db)
         }
@@ -136,7 +149,9 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
 
     public func allDetached() throws -> [Note] {
         try dbQueue.read { db in
-            try Note.filter(Column("archivedAt") == nil && Column("isDetached") == true)
+            try Note.filter(Column("deletedAt") == nil
+                            && Column("archivedAt") == nil
+                            && Column("isDetached") == true)
                 .order(Column("sortIndex").asc)
                 .fetchAll(db)
         }
@@ -158,21 +173,29 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
         }
     }
 
-    /// Case-insensitive substring search over the body, archived notes included.
+    /// Case-insensitive substring search over the body, archived notes included,
+    /// notes awaiting deletion excluded.
     ///
     /// `%` and `_` are escaped so a query of "100%" does not turn into a
     /// wildcard that matches every row. Same discipline as parameterised SQL:
     /// user input is never allowed to change what the query means.
     public func search(_ query: String) throws -> [Note] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return try all() }
+        guard !trimmed.isEmpty else {
+            return try dbQueue.read { db in
+                try Note.filter(Column("deletedAt") == nil)
+                    .order(Column("sortIndex").asc, Column("updatedAt").desc)
+                    .fetchAll(db)
+            }
+        }
         let escaped = trimmed
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_")
         return try dbQueue.read { db in
             try Note.filter(
-                sql: "text LIKE ? ESCAPE '\\'", arguments: ["%\(escaped)%"]
+                sql: "deletedAt IS NULL AND text LIKE ? ESCAPE '\\'",
+                arguments: ["%\(escaped)%"]
             )
             .order(Column("updatedAt").desc)
             .fetchAll(db)
@@ -194,6 +217,15 @@ public final class NoteStore: NoteStoring, @unchecked Sendable {
 
     public func delete(id: String) throws {
         _ = try dbQueue.write { db in try Note.deleteOne(db, key: id) }
+    }
+
+    public func markDeleted(id: String, at date: Date) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE note SET deletedAt = ?, updatedAt = ? WHERE id = ?",
+                arguments: [date, date, id]
+            )
+        }
     }
 
     public func archive(id: String, at date: Date) throws {

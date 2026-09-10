@@ -95,13 +95,15 @@ final class DockPanel: NSPanel {
         guard let screen = NSScreen.screens.first ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
 
+        // The height never changes, on purpose. It used to grow with the note
+        // count and then jump to the full panel height on expand, which also
+        // moved the panel vertically because it stays centred. Widening,
+        // growing and sliding all at once is what made opening the deck feel
+        // clunky. Only the width moves now.
+        let height = min(Theme.panelHeight, visible.height - 40)
         let width: CGFloat
-        let height: CGFloat
         if !state.isExpanded {
             width = Theme.collapsedWidth
-            // Grow with the number of notes, but never past two thirds of the screen.
-            let wanted = CGFloat(max(state.notes.count, 1)) * 19 + 20
-            height = min(max(wanted, 60), visible.height * 0.66)
         } else {
             // The deck is only as wide as it needs to be: tabs alone, tabs plus
             // a peek while the pointer rests on one, tabs plus the editor when a
@@ -113,7 +115,6 @@ final class DockPanel: NSPanel {
             } else {
                 width = Theme.tabWidth + 10
             }
-            height = min(Theme.panelHeight, visible.height - 40)
         }
 
         let frame = NSRect(
@@ -122,9 +123,10 @@ final class DockPanel: NSPanel {
             width: width,
             height: height
         )
+        guard frame != self.frame else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
+                context.duration = Theme.dockAnimation
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 animator().setFrame(frame, display: true)
             }
@@ -139,7 +141,11 @@ final class DockPanel: NSPanel {
         collapseWork?.cancel()
         collapseWork = nil
         guard !state.isExpanded else { return }
-        state.isExpanded = true
+        // The content crossfade and the window resize share one duration, so
+        // they read as a single movement rather than two.
+        withAnimation(.easeOut(duration: Theme.dockAnimation)) {
+            state.isExpanded = true
+        }
         layoutForCurrentState()
         // Become key on hover, but never activate the app. SwiftUI will not run a
         // drag gesture in a window that is not key, so without this a note cannot
@@ -167,8 +173,12 @@ final class DockPanel: NSPanel {
             }
             // Clear the hover too, or the next time the deck opens it opens
             // straight into a peek for whichever tab the pointer left last.
-            self.state.hoveredNoteId = nil
-            self.state.isExpanded = false
+            // Clear the hover too, or the next time the deck opens it opens
+            // straight into a peek for whichever tab the pointer left last.
+            self.state.clearHover()
+            withAnimation(.easeOut(duration: Theme.dockAnimation)) {
+                self.state.isExpanded = false
+            }
             self.layoutForCurrentState()
         }
         collapseWork = work

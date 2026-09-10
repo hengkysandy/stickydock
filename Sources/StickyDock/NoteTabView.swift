@@ -39,9 +39,9 @@ struct NoteTabView: View {
         .contentShape(Rectangle())
         .background(HoverReporter { inside in
             if inside {
-                state.hoveredNoteId = note.id
+                state.hover(note.id, isEntering: true)
             } else if state.hoveredNoteId == note.id {
-                state.hoveredNoteId = nil
+                state.hover(nil, isEntering: false)
             }
         })
         .gesture(tapOrDrag)

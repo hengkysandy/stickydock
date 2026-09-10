@@ -23,6 +23,14 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
     public var updatedAt: Date
     /// Archived, not deleted. Archived notes stay searchable and recoverable.
     public var archivedAt: Date?
+    /// Set when the user really deletes a note.
+    ///
+    /// The row is kept, briefly, as a tombstone. Removing it outright is what
+    /// made deleted notes come back: with no local record left, the next sync
+    /// saw the note sitting in Apple Notes, decided it was one it had never met,
+    /// and adopted it. The tombstone is what tells the sync to remove it from
+    /// Apple Notes as well, and only then is the row purged.
+    public var deletedAt: Date?
     public var sortIndex: Int
     /// True when the note has been dragged out of the dock and lives in its own
     /// window on the desktop.
@@ -55,6 +63,7 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
     public var syncedHash: String?
 
     public var isArchived: Bool { archivedAt != nil }
+    public var isDeleted: Bool { deletedAt != nil }
     public var title: String { NoteHTML.title(of: text) }
 
     public var styleRuns: [TextStyleRun] {
@@ -101,6 +110,7 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         archivedAt: Date? = nil,
+        deletedAt: Date? = nil,
         sortIndex: Int = 0,
         isDetached: Bool = false,
         frame: NoteFrame? = nil,
@@ -115,6 +125,7 @@ public struct Note: Codable, Equatable, Identifiable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.archivedAt = archivedAt
+        self.deletedAt = deletedAt
         self.sortIndex = sortIndex
         self.isDetached = isDetached
         self.frameX = frame?.x

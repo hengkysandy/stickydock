@@ -196,6 +196,35 @@ struct NoteStoreTests {
         #expect(try migrated.find(id: "old")?.isDetached == false)
     }
 
+    @Test func aTombstonedNoteIsHiddenFromEveryUserFacingList() throws {
+        try withStore { store in
+            try store.upsert(Note(id: "live", text: "still here"))
+            try store.upsert(Note(id: "gone", text: "deleted", deletedAt: Date()))
+            #expect(try store.allDocked().map(\.id) == ["live"])
+            #expect(try store.allActive().map(\.id) == ["live"])
+            #expect(try store.search("deleted").isEmpty)
+            #expect(try store.search("").map(\.id) == ["live"])
+            // The sync still needs to see it, or it can never take it out of
+            // Apple Notes.
+            #expect(try store.all().count == 2)
+        }
+    }
+
+    @Test func aTombstonedDetachedNoteIsNotRestoredToTheDesktop() throws {
+        try withStore { store in
+            try store.upsert(Note(id: "gone", text: "x", deletedAt: Date(), isDetached: true))
+            #expect(try store.allDetached().isEmpty)
+        }
+    }
+
+    @Test func markDeletedSetsTheTombstoneWithoutRemovingTheRow() throws {
+        try withStore { store in
+            try store.upsert(Note(id: "n", text: "x"))
+            try store.markDeleted(id: "n", at: Date())
+            #expect(try store.find(id: "n")?.isDeleted == true)
+        }
+    }
+
     @Test func nextSortIndexIsOneAboveTheHighest() throws {
         try withStore { store in
             #expect(try store.nextSortIndex() == 0)

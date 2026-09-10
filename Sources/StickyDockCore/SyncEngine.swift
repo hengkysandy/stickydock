@@ -15,8 +15,12 @@ public enum SyncAction: Equatable, Sendable {
     case conflict(noteId: String, remoteText: String)
     /// It was synced once and is now gone from the Notes folder.
     case archiveLocal(noteId: String)
-    /// Archived here, so take it out of the Notes folder.
+    /// Archived here, so take it out of the Notes folder but keep the text.
     case deleteRemote(noteId: String, notesId: String)
+    /// Deleted here for good. Remove it from Apple Notes, then drop the row.
+    /// `notesId` is nil when the note never reached Apple Notes, or is already
+    /// gone from the folder.
+    case purge(noteId: String, notesId: String?)
     /// Archived here, but edited on another device afterwards. Bring it back.
     case restore(noteId: String, notesId: String)
     /// Both sides already agree. Just record the hash.
@@ -96,6 +100,21 @@ public final class SyncEngine: @unchecked Sendable {
         func append(_ action: SyncAction) { actions.append(action) }
 
         for note in local {
+            if note.isDeleted {
+                // Claim the id first. Without this the very same pass would see
+                // the note still sitting in Apple Notes, call it unknown, and
+                // adopt it straight back. That is exactly how deleted notes kept
+                // coming back.
+                if let notesId = note.notesId {
+                    claimed.insert(notesId)
+                    let stillThere = remoteById[notesId] != nil
+                    actions.append(.purge(noteId: note.id, notesId: stillThere ? notesId : nil))
+                } else {
+                    actions.append(.purge(noteId: note.id, notesId: nil))
+                }
+                continue
+            }
+
             guard let notesId = note.notesId else {
                 // Never pushed. Create it, unless it is archived or still blank.
                 if !note.isArchived && !note.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -244,6 +263,14 @@ public final class SyncEngine: @unchecked Sendable {
                 note.syncedHash = ContentHash.of(remoteText)
                 try store.upsert(note)
                 report.conflicts += 1
+
+            case .purge(let noteId, let notesId):
+                if let notesId {
+                    try bridge.delete(account: account, folder: folder, id: notesId)
+                    sheet.entries[notesId] = nil
+                }
+                try store.delete(id: noteId)
+                report.deletedRemotely += 1
 
             case .archiveLocal(let noteId):
                 try store.archive(id: noteId, at: Date())

@@ -101,7 +101,14 @@ have, rather than being stranded somewhere you cannot reach it.
 
 **Archive keeps the text, delete does not.** Archiving takes the note out of the
 Notes folder, so it leaves your phone, but the text stays here and stays
-searchable in All Notes. Delete is permanent.
+searchable in All Notes. Delete is permanent, and it removes the note from Apple
+Notes too.
+
+A deleted note leaves a tombstone behind for a few seconds, until the next sync
+has removed it from Apple Notes. That is not tidiness, it is the whole mechanism:
+without a local record the next sync would find the note still sitting in Apple
+Notes, decide it was one it had never seen, and adopt it straight back. Delete
+therefore needs one sync to finish, and survives a quit in between.
 
 ## What it deliberately does not do
 

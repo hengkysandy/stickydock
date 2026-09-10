@@ -36,6 +36,10 @@ enum Theme {
     /// Each tab arrives a beat after the one above it.
     static let tabStagger: Double = 0.045
 
+    /// One duration for every dock movement, so the window resize and the
+    /// content crossfade cannot drift apart and read as two separate events.
+    static let dockAnimation: TimeInterval = 0.20
+
     static let peekWidth: CGFloat = 236
     static let editorWidth: CGFloat = 330
     static let panelHeight: CGFloat = 470

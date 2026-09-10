@@ -419,6 +419,72 @@ struct SyncEngineRunTests {
         #expect(try store.find(notesId: "r1")?.color == .purple)
     }
 
+    @Test func aDeletedNoteLeavesAppleNotesAndDoesNotComeBack() throws {
+        // The bug this exists for: deleting removed the local row outright, so
+        // the next sync found the note in Apple Notes, decided it had never seen
+        // it, and adopted it back. Every delete undid itself.
+        let (engine, store, bridge, dir) = try makeEngine(notes: [Note(id: "l1", text: "delete me")])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        _ = try engine.runOnce()
+        #expect(bridge.current.count == 1)
+
+        try store.markDeleted(id: "l1", at: Date())
+        _ = try engine.runOnce()
+
+        #expect(bridge.current.isEmpty, "it must be removed from Apple Notes")
+        #expect(try store.all().isEmpty, "the tombstone must be purged once that is done")
+
+        // And a third pass must not resurrect anything either.
+        _ = try engine.runOnce()
+        #expect(try store.all().isEmpty)
+        #expect(bridge.current.isEmpty)
+    }
+
+    @Test func aDeletedNoteThatNeverReachedAppleNotesIsJustDropped() throws {
+        let (engine, store, bridge, dir) = try makeEngine()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try store.upsert(Note(id: "l1", text: "never synced", deletedAt: Date()))
+
+        _ = try engine.runOnce()
+        #expect(try store.all().isEmpty)
+        #expect(bridge.current.isEmpty)
+        #expect(!bridge.calls.contains { if case .create = $0 { return true }; return false },
+                "a note deleted before it ever synced must not be created first")
+    }
+
+    @Test func aDeletedNoteIsNotAdoptedBackInTheSamePass() throws {
+        // The claim on the id has to happen while planning, not after applying,
+        // or the adopt branch in the same pass puts it straight back.
+        let deleted = Note(id: "l1", notesId: "r1", text: "gone",
+                           deletedAt: Date(), syncedHash: ContentHash.of("gone"))
+        let actions = SyncEngine.plan(
+            local: [deleted],
+            remote: [RemoteNote(id: "r1", title: "gone", text: "gone",
+                                body: NoteHTML.toHTML("gone"), modifiedAt: Date())]
+        )
+        #expect(actions == [.purge(noteId: "l1", notesId: "r1")])
+        #expect(!actions.contains(.adopt(notesId: "r1")))
+    }
+
+    @Test func deletingIsDifferentFromArchiving() throws {
+        // Archive keeps the text here and only unlinks it. Delete takes it away.
+        let (engine, store, _, dir) = try makeEngine(notes: [
+            Note(id: "keep", text: "archived one"),
+            Note(id: "drop", text: "deleted one"),
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try engine.runOnce()
+
+        try store.archive(id: "keep", at: Date())
+        try store.markDeleted(id: "drop", at: Date())
+        _ = try engine.runOnce()
+
+        #expect(try store.find(id: "keep")?.text == "archived one", "archive keeps the text")
+        #expect(try store.find(id: "keep")?.isArchived == true)
+        #expect(try store.find(id: "drop") == nil, "delete really deletes")
+    }
+
     @Test func remoteEditIsPulledIntoTheLocalCache() throws {
         let (engine, store, _, dir) = try makeEngine(
             notes: [Note(id: "l1", notesId: "r1", text: "old",

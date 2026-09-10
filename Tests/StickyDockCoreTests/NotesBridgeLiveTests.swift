@@ -156,6 +156,41 @@ struct NotesBridgeLiveTests {
         #expect(updated.styleRuns == second.runs)
     }
 
+    @Test func deletingRunsAllTheWayThroughToAppleNotes() throws {
+        // The whole delete path, against the real app: create, sync, delete,
+        // and prove it is gone from Apple Notes and stays gone.
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        let engine = SyncEngine(
+            store: store, bridge: bridge,
+            sidecar: SidecarStore(directory: dir),
+            account: account, folder: folder
+        )
+
+        try store.upsert(Note(id: "l1", text: "Live delete test"))
+        _ = try engine.runOnce()
+        #expect(try bridge.list(account: account, folder: folder).count == 1)
+
+        try store.markDeleted(id: "l1", at: Date())
+        _ = try engine.runOnce()
+
+        #expect(try bridge.list(account: account, folder: folder).isEmpty,
+                "the note must be gone from Apple Notes")
+        #expect(try store.all().isEmpty, "and the tombstone purged")
+
+        _ = try engine.runOnce()
+        #expect(try store.all().isEmpty, "it must not come back on a later pass")
+        #expect(try bridge.list(account: account, folder: folder).isEmpty)
+    }
+
     @Test func unknownAccountReportsAClearError() throws {
         #expect(throws: NotesBridgeError.self) {
             try bridge().list(account: "NoSuchAccount", folder: folder)

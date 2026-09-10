@@ -19,15 +19,18 @@ final class AppState: ObservableObject {
     /// The note currently being pulled out of the deck. Its card stays in the
     /// list, dimmed, until the drag finishes.
     @Published var draggingNoteId: String?
-    /// The tab the pointer is over. Drives the sneak peek, and it is the panel's
-    /// width that follows it, so it lives here rather than inside a view.
-    @Published var hoveredNoteId: String?
+    /// The tab the pointer is resting on. Drives the sneak peek, and it is the
+    /// panel's width that follows it, so it lives here rather than inside a view.
+    ///
+    /// Set through `hover(_:)`, never directly: it needs the delay.
+    @Published private(set) var hoveredNoteId: String?
 
     let store: NoteStoring
     /// Fired after an edit settles, so a sync can follow shortly after.
     var onLocalEdit: (() -> Void)?
 
     private var saveTask: Task<Void, Never>?
+    private var hoverWork: DispatchWorkItem?
     /// The note being typed into, held until the debounce fires or the app
     /// quits. Only this note is ever flushed.
     private var pendingEdit: (id: String, rich: RichText)?
@@ -40,6 +43,42 @@ final class AppState: ObservableObject {
     var selectedNote: Note? {
         guard let selectedNoteId else { return nil }
         return notes.first { $0.id == selectedNoteId }
+    }
+
+    /// Hover intent, with a pause before the peek appears and a shorter one
+    /// before it goes away.
+    ///
+    /// Reaching for the screen edge lands the pointer directly on a tab, so
+    /// without the pause the deck fanned open and a peek slid out in the same
+    /// instant: two width changes on top of each other, which is what made
+    /// opening the dock feel clumsy. Now reaching over fans the deck, and
+    /// resting on a tab is a separate, deliberate second movement.
+    ///
+    /// The shorter pause on the way out is what lets the pointer travel from one
+    /// tab to the next without the peek blinking shut in between.
+    func hover(_ noteId: String?, isEntering: Bool) {
+        hoverWork?.cancel()
+        guard isExpanded || noteId == nil else { return }
+
+        let delay = isEntering ? 0.30 : 0.12
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.isExpanded || noteId == nil else { return }
+            // No withAnimation here. The view animates this value itself, and
+            // animating it in both places left the peek stuck part way through
+            // its fade, showing the desktop through it.
+            self.hoveredNoteId = noteId
+        }
+        hoverWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Drops the peek at once, with no animation, for the cases where the deck
+    /// itself is going away.
+    func clearHover() {
+        hoverWork?.cancel()
+        hoverWork = nil
+        hoveredNoteId = nil
     }
 
     var hoveredNote: Note? {
@@ -60,7 +99,7 @@ final class AppState: ObservableObject {
             selectedNoteId = nil
         }
         if let id = hoveredNoteId, !notes.contains(where: { $0.id == id }) {
-            hoveredNoteId = nil
+            clearHover()
         }
     }
 
@@ -93,7 +132,7 @@ final class AppState: ObservableObject {
         )
         try? store.upsert(note)
         reload()
-        hoveredNoteId = nil
+        clearHover()
         selectedNoteId = note.id
         isExpanded = true
         return note
@@ -169,9 +208,12 @@ final class AppState: ObservableObject {
         onLocalEdit?()
     }
 
+    /// A real delete. The row survives as a tombstone until the next sync has
+    /// taken the note out of Apple Notes, otherwise the sync would find it there
+    /// and bring it straight back.
     func delete(_ noteId: String) {
         windows?.close(noteId: noteId)
-        try? store.delete(id: noteId)
+        try? store.markDeleted(id: noteId, at: Date())
         if selectedNoteId == noteId { selectedNoteId = nil }
         reload()
         onLocalEdit?()
@@ -194,7 +236,7 @@ final class AppState: ObservableObject {
             note.frame = note.frame ?? DetachedFrame.defaultFrame(around: point)
         }
         if selectedNoteId == noteId { selectedNoteId = nil }
-        hoveredNoteId = nil
+        clearHover()
         draggingNoteId = noteId
 
         windows?.beginDrag(noteId: noteId) { [weak self] in
