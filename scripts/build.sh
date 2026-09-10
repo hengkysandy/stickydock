@@ -16,10 +16,18 @@ CONFIG="${CONFIG:-release}"
 IDENTITY="${STICKYDOCK_IDENTITY:-$(security find-identity -v -p codesigning \
     | awk -F'"' '/Apple Development/ { print $2; exit }')}"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG" --product StickyDock
+# Universal by default. An arm64-only build does not merely warn on an Intel
+# Mac, it fails to launch, sometimes with no dialog at all, which looks exactly
+# like the app being broken. Set STICKYDOCK_ARCHS="arm64" for a faster local
+# build when you only care about this machine.
+ARCHS="${STICKYDOCK_ARCHS:-arm64 x86_64}"
+ARCH_FLAGS=()
+for a in $ARCHS; do ARCH_FLAGS+=(--arch "$a"); done
 
-BIN="$(swift build -c "$CONFIG" --product StickyDock --show-bin-path)/StickyDock"
+echo "==> swift build -c $CONFIG (${ARCHS})"
+swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --product StickyDock
+
+BIN="$(swift build -c "$CONFIG" "${ARCH_FLAGS[@]}" --product StickyDock --show-bin-path)/StickyDock"
 [ -f "$BIN" ] || { echo "no binary at $BIN"; exit 1; }
 
 echo "==> assembling $APP"
@@ -43,10 +51,11 @@ for bundle in "$BINDIR"/*.bundle; do
   cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
-BRIDGE="$APP/Contents/Resources/StickyDock_StickyDockCore.bundle/notes_bridge.js"
-if [ ! -f "$BRIDGE" ]; then
+# Searched, not hardcoded: a plain `swift build` emits a flat resource bundle
+# while a multi-arch build emits a proper Contents/Resources layout. Bundle.module
+# reads both, so the check has to look in both.
+if ! find "$APP/Contents/Resources" -name notes_bridge.js -print -quit | grep -q .; then
   echo "FAILED: the Notes bridge script is not in the app bundle."
-  echo "        expected at $BRIDGE"
   echo "        without it StickyDock launches but never syncs."
   exit 1
 fi
@@ -63,4 +72,5 @@ else
 fi
 
 codesign -dv "$APP" 2>&1 | grep -E 'Identifier|Authority|Signature' || true
+echo "==> architectures: $(lipo -info "$APP/Contents/MacOS/StickyDock" | sed 's/^.*: //')"
 echo "==> built $APP"

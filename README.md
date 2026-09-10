@@ -32,15 +32,57 @@ edge of the screen.
 
 ## Install
 
-Grab the `.dmg` from [Releases](https://github.com/hengkysandy/stickydock/releases),
-open it, and drag StickyDock to Applications.
+1. Download the `.dmg` from [Releases](https://github.com/hengkysandy/stickydock/releases)
+   and drag StickyDock to Applications.
+2. Clear the quarantine flag:
 
-**macOS will refuse to open it the first time.** The app is signed, but with a
-free Apple Development certificate and it is not notarized, so Gatekeeper treats
-it as coming from an unidentified developer. Right-click the app and choose
-**Open**, then confirm. You only have to do that once. If you would rather not,
-build it yourself with the two commands below; a locally built app carries no
-quarantine flag and Gatekeeper never looks at it.
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/StickyDock.app
+   ```
+
+3. Open it. There is **no Dock icon** by design. Look for the note icon in the
+   menu bar, or move your pointer to the right edge of the screen.
+
+**Do not use `sudo` for that command.** With `sudo` the attribute is removed as
+root, which can leave the bundle owned by root and the app then fails to write
+its own database. If you already did, fix it with
+`sudo chown -R "$(whoami)" /Applications/StickyDock.app`.
+
+Without step 2, macOS says the developer cannot be verified. The app is signed,
+but with a free Apple Development certificate and no notarization, which needs
+the paid Apple Developer Programme. Right-clicking and choosing **Open** works
+too. Building it yourself skips all of this: a locally built app is never
+quarantined.
+
+On the first sync macOS asks whether StickyDock may control Notes. Say yes. If
+you say no it still runs, it just stops syncing, and it will tell you so.
+
+## Nothing happens when I open it
+
+Run this on the Mac in question and read the four answers:
+
+```bash
+sw_vers -productVersion                                   # needs 14 or later
+uname -m                                                  # arm64 or x86_64
+lipo -info /Applications/StickyDock.app/Contents/MacOS/StickyDock
+pgrep -x StickyDock && echo RUNNING || echo NOT RUNNING
+```
+
+- **macOS 13 or older.** It will not launch. The app needs 14.
+- **`lipo` does not list your architecture.** Releases before v1.0.1 were arm64
+  only and cannot start on an Intel Mac, usually with no dialog at all. Use
+  v1.0.1 or later, which is universal.
+- **RUNNING, but you see nothing.** It is working; you are just not finding it.
+  There is no Dock icon. If you use a menu bar manager such as Ice or Bartender,
+  or your Mac has a notch and a crowded menu bar, the icon is hidden. Move the
+  pointer to the very right edge of the screen instead: the resting stripe is
+  only 14 points wide.
+- **NOT RUNNING.** Look for a crash report:
+
+  ```bash
+  ls -t ~/Library/Logs/DiagnosticReports | grep -i stickydock | head
+  log show --last 5m --predicate 'process == "StickyDock"' | tail -40
+  ```
 
 ## Requirements
 
@@ -57,10 +99,15 @@ one.
 ## Build and run
 
 ```bash
-./scripts/build.sh    # builds and signs build/StickyDock.app
+./scripts/build.sh    # builds and signs build/StickyDock.app (universal)
 ./scripts/run.sh      # builds, kills any running copy, relaunches
 ./scripts/package.sh  # builds the .dmg for a release
+./scripts/make_icon.py  # regenerates Resources/AppIcon.icns
 ```
+
+`build.sh` builds for arm64 and x86_64 together, so the result runs on both
+Apple Silicon and Intel. For a faster build while working on one machine, set
+`STICKYDOCK_ARCHS="arm64"`.
 
 `build.sh` signs with a real certificate rather than ad-hoc on purpose. macOS ties
 the Automation permission grant to the code signature, and an ad-hoc signature
