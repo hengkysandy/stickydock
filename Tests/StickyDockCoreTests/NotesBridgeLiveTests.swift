@@ -45,7 +45,7 @@ struct NotesBridgeLiveTests {
 
         let text = "Live test title\n\nampersand & less < greater > percent 100%"
         let created = try bridge.create(
-            account: account, folder: folder, rich: RichText(text: text), knownIds: []
+            account: account, folder: folder, rich: RichText(text: text)
         )
         #expect(created.text == text, "text must survive the HTML round trip exactly")
         #expect(created.title == "Live test title")
@@ -73,9 +73,9 @@ struct NotesBridgeLiveTests {
         try emptyFolder(bridge)
         defer { try? emptyFolder(bridge) }
 
-        let first = try bridge.create(account: account, folder: folder, rich: RichText(text: "one"), knownIds: [])
+        let first = try bridge.create(account: account, folder: folder, rich: RichText(text: "one"))
         let second = try bridge.create(
-            account: account, folder: folder, rich: RichText(text: "two"), knownIds: [first.id]
+            account: account, folder: folder, rich: RichText(text: "two")
         )
         #expect(first.id != second.id)
         #expect(second.text == "two")
@@ -90,7 +90,7 @@ struct NotesBridgeLiveTests {
         defer { try? emptyFolder(bridge) }
 
         let text = "Loop check\nline two\n\nline four & <five>"
-        let created = try bridge.create(account: account, folder: folder, rich: RichText(text: text), knownIds: [])
+        let created = try bridge.create(account: account, folder: folder, rich: RichText(text: text))
         let listed = try bridge.list(account: account, folder: folder).first
         #expect(ContentHash.of(created.text) == ContentHash.of(text))
         #expect(ContentHash.of(listed?.text ?? "") == ContentHash.of(text))
@@ -111,7 +111,7 @@ struct NotesBridgeLiveTests {
             TextStyleRun(location: 24, length: 5, underline: true),
         ])
         let created = try bridge.create(
-            account: account, folder: folder, rich: rich, knownIds: []
+            account: account, folder: folder, rich: rich
         )
         #expect(created.text == rich.text)
         #expect(created.styleRuns == rich.runs, "formatting must come back unchanged")
@@ -130,7 +130,7 @@ struct NotesBridgeLiveTests {
             TextStyleRun(location: 0, length: 9, bold: true, italic: true, underline: true),
         ])
         let created = try bridge.create(
-            account: account, folder: folder, rich: rich, knownIds: []
+            account: account, folder: folder, rich: rich
         )
         #expect(created.styleRuns == rich.runs)
     }
@@ -143,8 +143,7 @@ struct NotesBridgeLiveTests {
 
         let first = try bridge.create(
             account: account, folder: folder,
-            rich: RichText(text: "one two", runs: [TextStyleRun(location: 0, length: 3, bold: true)]),
-            knownIds: []
+            rich: RichText(text: "one two", runs: [TextStyleRun(location: 0, length: 3, bold: true)])
         )
         let second = RichText(
             text: "one two three",

@@ -9,6 +9,7 @@ struct RichTextEditorView: NSViewRepresentable {
     /// Focus is taken when the note is opened deliberately, never when a note
     /// merely appears on screen.
     var focusOnAppear: Bool = false
+    var onEscape: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -41,6 +42,8 @@ struct RichTextEditorView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
 
+        let coordinator = context.coordinator
+        textView.onEscape = { coordinator.parent.onEscape() }
         scrollView.documentView = textView
         context.coordinator.textView = textView
         textView.noteContent = rich
@@ -53,6 +56,10 @@ struct RichTextEditorView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NoteTextView else { return }
+        // The coordinator outlives this struct, which SwiftUI rebuilds on every
+        // render. Without this it keeps writing through the binding captured at
+        // the very first render.
+        context.coordinator.parent = self
         textView.textColor = textColor
         textView.insertionPointColor = textColor
         // Only write back when something really differs, or every keystroke
@@ -63,7 +70,7 @@ struct RichTextEditorView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        private let parent: RichTextEditorView
+        var parent: RichTextEditorView
         weak var textView: NoteTextView?
 
         init(_ parent: RichTextEditorView) {

@@ -148,11 +148,22 @@ final class StickyWindowManager {
     func closeAll() {
         dragTimer?.invalidate()
         dragTimer = nil
-        for id in windows.keys { close(noteId: id) }
+        // Array(), because `close` removes from `windows` and mutating a
+        // dictionary while iterating its own keys view is undefined behaviour.
+        for id in Array(windows.keys) { close(noteId: id) }
     }
 
     func bringAllToFront() {
         for window in windows.values { window.orderFront(nil) }
+    }
+
+    func isOpen(noteId: String) -> Bool { windows[noteId] != nil }
+
+    /// Brings one desktop note forward and gives it focus.
+    func focus(noteId: String) {
+        guard let window = show(noteId: noteId) else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     var openCount: Int { windows.count }

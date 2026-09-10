@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import StickyDockCore
 
@@ -26,7 +27,13 @@ struct StickyNoteView: View {
 
             VStack(spacing: 0) {
                 dragStrip
-                RichTextEditorView(rich: $rich, textColor: Theme.inkNS)
+                RichTextEditorView(
+                    rich: $rich,
+                    textColor: Theme.inkNS,
+                    // Escape hands focus back to whatever the user was in
+                    // before, rather than closing the note.
+                    onEscape: { NSApp.deactivate() }
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 6)
                     .padding(.bottom, 4)

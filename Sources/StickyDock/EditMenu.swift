@@ -10,6 +10,7 @@ import AppKit
 ///
 /// The items target `nil`, so AppKit sends them to whatever holds first
 /// responder, which is the note's text view.
+@MainActor
 enum EditMenu {
 
     /// Bold, italic and underline. The actions target `nil` so AppKit sends them

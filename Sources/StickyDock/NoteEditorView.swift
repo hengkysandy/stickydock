@@ -13,7 +13,12 @@ struct NoteEditorView: View {
             header
             Divider().opacity(0.25)
 
-            RichTextEditorView(rich: $rich, textColor: Theme.inkNS, focusOnAppear: true)
+            RichTextEditorView(
+                rich: $rich,
+                textColor: Theme.inkNS,
+                focusOnAppear: true,
+                onEscape: { state.selectedNoteId = nil }
+            )
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
                 .onChange(of: rich) { _, new in

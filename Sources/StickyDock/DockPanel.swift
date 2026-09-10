@@ -88,7 +88,11 @@ final class DockPanel: NSPanel {
     /// Re-anchors the panel to the right edge at whatever size the current state
     /// calls for.
     func layoutForCurrentState(animated: Bool = true) {
-        guard let screen = NSScreen.main else { return }
+        // The screen with the menu bar, not `NSScreen.main`. `NSScreen.main` is
+        // whichever screen holds the key window, so with two displays the dock
+        // would jump to the other monitor the moment the user clicked over
+        // there. A dock pinned to an edge has to stay put.
+        guard let screen = NSScreen.screens.first ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
 
         let width: CGFloat
@@ -153,8 +157,17 @@ final class DockPanel: NSPanel {
         collapseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            // Never collapse out from under someone who is typing.
-            guard self.state.selectedNoteId == nil else { return }
+            if self.state.selectedNoteId != nil {
+                // Never collapse out from under someone who is typing. But if
+                // they have gone off to another app, an open editor left sitting
+                // 400pt wide over their work is not "still editing", it is in
+                // the way.
+                guard !NSApp.isActive else { return }
+                self.state.selectedNoteId = nil
+            }
+            // Clear the hover too, or the next time the deck opens it opens
+            // straight into a peek for whichever tab the pointer left last.
+            self.state.hoveredNoteId = nil
             self.state.isExpanded = false
             self.layoutForCurrentState()
         }

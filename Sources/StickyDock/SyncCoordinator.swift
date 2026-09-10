@@ -45,9 +45,15 @@ final class SyncCoordinator {
 
     private func scheduleTimer(after seconds: TimeInterval) {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.runSync() }
         }
+        // `.common` rather than a plain scheduled timer. The run loop sits in
+        // event-tracking mode while a menu is open or the pointer is dragging,
+        // and a default-mode timer does not fire at all during that, so syncing
+        // would quietly stall for as long as the user kept interacting.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func nextInterval() -> TimeInterval {
@@ -114,8 +120,8 @@ final class SyncCoordinator {
         alert.addButton(withTitle: "Later")
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn {
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!
-            NSWorkspace.shared.open(url)
+            let settings = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
+            if let url = URL(string: settings) { NSWorkspace.shared.open(url) }
         }
     }
 

@@ -8,6 +8,7 @@ import AppKit
 /// to whichever app the user was in before, which is worse than nothing
 /// happening. Both the dock editor and the desktop notes therefore set the first
 /// responder directly.
+@MainActor
 enum TextViewFocus {
 
     static func firstEditableTextView(in view: NSView?) -> NSTextView? {

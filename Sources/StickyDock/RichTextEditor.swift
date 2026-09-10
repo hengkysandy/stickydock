@@ -9,8 +9,19 @@ import SwiftUI
 /// selection, and the system find bar on ⌘F.
 final class NoteTextView: NSTextView {
 
-    /// Called when the text or its formatting changes.
-    var onEdit: ((RichText) -> Void)?
+    /// Escape. Closes the dock editor, or hands focus back from a desktop note.
+    var onEscape: (() -> Void)?
+
+    override func cancelOperation(_ sender: Any?) {
+        // Escape belongs to the find bar first if one is showing.
+        if let container = enclosingScrollView, container.isFindBarVisible {
+            let hide = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            hide.tag = NSTextFinder.Action.hideFindInterface.rawValue
+            performTextFinderAction(hide)
+            return
+        }
+        onEscape?()
+    }
 
     /// Named `noteContent` rather than `richText` because `NSTextView` already
     /// has a `richText` property, and it is a Bool.
@@ -18,7 +29,9 @@ final class NoteTextView: NSTextView {
         get { RichTextBridge.richText(from: attributedString()) }
         set {
             let selected = selectedRange()
-            textStorage?.setAttributedString(RichTextBridge.attributed(newValue, font: baseFont))
+            textStorage?.setAttributedString(
+                RichTextBridge.attributed(newValue, font: baseFont, color: textColor ?? .black)
+            )
             // Keep the caret where the user left it. Without this, every sync
             // that touches this note throws the cursor back to the start.
             let length = (string as NSString).length
@@ -36,11 +49,11 @@ final class NoteTextView: NSTextView {
     /// ⌘B. Applies to the selection, or to whatever is typed next when there is
     /// no selection, which is what every other Mac editor does.
     @objc func toggleBold(_ sender: Any?) {
-        toggleTrait(.boldFontMask, unset: .unboldFontMask)
+        toggleTrait(.boldFontMask)
     }
 
     @objc func toggleItalic(_ sender: Any?) {
-        toggleTrait(.italicFontMask, unset: .unitalicFontMask)
+        toggleTrait(.italicFontMask)
     }
 
     /// ⌘U. `NSText.underline(_:)` exists but toggles through a different code
@@ -77,15 +90,16 @@ final class NoteTextView: NSTextView {
         return allUnderlined
     }
 
-    private func toggleTrait(_ trait: NSFontTraitMask, unset: NSFontTraitMask) {
+    private func toggleTrait(_ trait: NSFontTraitMask) {
         let manager = NSFontManager.shared
         let range = selectedRange()
 
         if range.length == 0 {
             let font = typingAttributes[.font] as? NSFont ?? baseFont
             let isOn = manager.traits(of: font).contains(trait)
-            typingAttributes[.font] = manager.convert(font, toNotHaveTrait: isOn ? trait : unset)
-            if !isOn { typingAttributes[.font] = manager.convert(font, toHaveTrait: trait) }
+            typingAttributes[.font] = isOn
+                ? manager.convert(font, toNotHaveTrait: trait)
+                : manager.convert(font, toHaveTrait: trait)
             return
         }
 
@@ -131,10 +145,12 @@ final class NoteTextView: NSTextView {
 /// index translation to get wrong.
 enum RichTextBridge {
 
-    static func attributed(_ rich: RichText, font: NSFont) -> NSAttributedString {
+    static func attributed(
+        _ rich: RichText, font: NSFont, color: NSColor = .black
+    ) -> NSAttributedString {
         let result = NSMutableAttributedString(
             string: rich.text,
-            attributes: [.font: font, .foregroundColor: NSColor.black]
+            attributes: [.font: font, .foregroundColor: color]
         )
         let manager = NSFontManager.shared
         let length = (rich.text as NSString).length

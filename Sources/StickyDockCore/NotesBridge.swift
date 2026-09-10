@@ -64,7 +64,7 @@ public enum NotesBridgeError: Error, Equatable, CustomStringConvertible {
 public protocol NotesBridging: Sendable {
     func ensureFolder(account: String, folder: String) throws
     func list(account: String, folder: String) throws -> [RemoteNote]
-    func create(account: String, folder: String, rich: RichText, knownIds: [String]) throws -> RemoteNote
+    func create(account: String, folder: String, rich: RichText) throws -> RemoteNote
     func update(account: String, folder: String, id: String, rich: RichText) throws -> RemoteNote
     func delete(account: String, folder: String, id: String) throws
 }
@@ -106,11 +106,11 @@ public final class NotesBridge: NotesBridging, @unchecked Sendable {
     }
 
     public func create(
-        account: String, folder: String, rich: RichText, knownIds: [String]
+        account: String, folder: String, rich: RichText
     ) throws -> RemoteNote {
         let reply = try call([
             "op": "create", "account": account, "folder": folder,
-            "html": NoteHTML.toHTML(rich), "knownIds": knownIds,
+            "html": NoteHTML.toHTML(rich),
         ])
         return try Self.decodeSingle(reply)
     }

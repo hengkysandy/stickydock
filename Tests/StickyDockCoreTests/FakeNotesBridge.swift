@@ -42,7 +42,7 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
         return current
     }
 
-    func create(account: String, folder: String, rich: RichText, knownIds: [String]) throws -> RemoteNote {
+    func create(account: String, folder: String, rich: RichText) throws -> RemoteNote {
         try record(.create(text: rich.text))
         return lock.withLock {
             // Serialise and parse back, exactly as the real bridge does, so the

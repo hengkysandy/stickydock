@@ -24,15 +24,16 @@ final class AppState: ObservableObject {
     @Published var hoveredNoteId: String?
 
     let store: NoteStoring
-    private let onNotesChanged: () -> Void
     /// Fired after an edit settles, so a sync can follow shortly after.
     var onLocalEdit: (() -> Void)?
 
     private var saveTask: Task<Void, Never>?
+    /// The note being typed into, held until the debounce fires or the app
+    /// quits. Only this note is ever flushed.
+    private var pendingEdit: (id: String, rich: RichText)?
 
-    init(store: NoteStoring, onNotesChanged: @escaping () -> Void = {}) {
+    init(store: NoteStoring) {
         self.store = store
-        self.onNotesChanged = onNotesChanged
         reload()
     }
 
@@ -61,7 +62,25 @@ final class AppState: ObservableObject {
         if let id = hoveredNoteId, !notes.contains(where: { $0.id == id }) {
             hoveredNoteId = nil
         }
-        onNotesChanged()
+    }
+
+    /// Applies a change to the note **as it is in the store**, never to a
+    /// published copy.
+    ///
+    /// This exists because the published lists can be behind the database: they
+    /// are deliberately stale during a drag, and a sync running in the
+    /// background writes `notesId` and `syncedHash` without going through them.
+    /// Writing a stale copy back would erase a `notesId` that had just been
+    /// assigned, and a note with no `notesId` gets created in Apple Notes all
+    /// over again. Duplicated notes on the user's phone is the worst outcome
+    /// this app has, so every mutation goes through here.
+    @discardableResult
+    private func mutate(_ noteId: String, _ change: (inout Note) -> Void) -> Note? {
+        guard var note = try? store.find(id: noteId) else { return nil }
+        change(&note)
+        try? store.upsert(note)
+        replaceInPublishedLists(note)
+        return note
     }
 
     // MARK: - Actions
@@ -74,6 +93,7 @@ final class AppState: ObservableObject {
         )
         try? store.upsert(note)
         reload()
+        hoveredNoteId = nil
         selectedNoteId = note.id
         isExpanded = true
         return note
@@ -82,20 +102,25 @@ final class AppState: ObservableObject {
     /// Writes are debounced. Every keystroke hitting SQLite would be wasteful,
     /// and every keystroke triggering a sync would hammer Apple Events.
     func updateRich(_ rich: RichText, for noteId: String) {
-        guard var note = anyNote(noteId) else { return }
-        guard note.rich != rich else { return }
-        // The plain text may be identical while only the formatting moved. Sync
-        // decides on the hash of the plain text, so that case has to be flagged
-        // or it would never be sent.
-        if note.text == rich.text { note.styleDirty = true }
-        note.rich = rich
-        note.updatedAt = Date()
-        replaceInPublishedLists(note)
+        // Moving to a different note before the debounce fires must not throw
+        // away what was typed into the previous one.
+        if let pending = pendingEdit, pending.id != noteId {
+            saveTask?.cancel()
+            saveTask = nil
+            commitPendingEdit()
+        }
+        guard var shown = anyNote(noteId), shown.rich != rich else { return }
+        // Show it straight away; the write is debounced behind it.
+        shown.rich = rich
+        shown.updatedAt = Date()
+        replaceInPublishedLists(shown)
+
+        pendingEdit = (noteId, rich)
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled, let self else { return }
-            try? self.store.upsert(note)
+            self.commitPendingEdit()
             self.reload()
             self.onLocalEdit?()
         }
@@ -104,17 +129,34 @@ final class AppState: ObservableObject {
     /// Called before the app quits, so the last keystrokes are never lost to the
     /// debounce timer.
     func flushPendingEdit() {
-        guard saveTask != nil else { return }
         saveTask?.cancel()
         saveTask = nil
-        for note in notes + detachedNotes { try? store.upsert(note) }
+        commitPendingEdit()
+    }
+
+    /// Writes only the text and formatting, onto whatever the store holds now.
+    ///
+    /// Deliberately narrow. An earlier version wrote the whole record, and every
+    /// other field on it, back from a published copy, which could erase a
+    /// `notesId` a background sync had just assigned.
+    private func commitPendingEdit() {
+        guard let (noteId, rich) = pendingEdit else { return }
+        pendingEdit = nil
+        mutate(noteId) { note in
+            guard note.rich != rich else { return }
+            // Identical text with different formatting is invisible to the sync
+            // hash, so that case has to be flagged or it would never be sent.
+            if note.text == rich.text { note.styleDirty = true }
+            note.rich = rich
+            note.updatedAt = Date()
+        }
     }
 
     func setColor(_ color: NoteColor, for noteId: String) {
-        guard var note = anyNote(noteId) else { return }
-        note.color = color
-        note.updatedAt = Date()
-        try? store.upsert(note)
+        mutate(noteId) { note in
+            note.color = color
+            note.updatedAt = Date()
+        }
         reload()
         onLocalEdit?()
     }
@@ -137,12 +179,6 @@ final class AppState: ObservableObject {
 
     // MARK: - Desktop windows
 
-    /// Lifts a note out of the dock into its own window on the desktop.
-    ///
-    /// Deliberately does **not** reload the published lists. Reloading here would
-    /// remove the card from the deck, SwiftUI would tear down the very view whose
-    /// drag gesture is still running, and the drag would die halfway out. The
-    /// lists are refreshed by `endDetach` once the mouse comes up.
     /// Pulls a note out of the deck and hands it to the drag.
     ///
     /// Returns immediately; the drag finishes on its own. The published lists
@@ -150,13 +186,15 @@ final class AppState: ObservableObject {
     /// first would remove the card from the deck and tear down the very view
     /// whose gesture began all this.
     func detachByDragging(_ noteId: String, from point: NotePoint) {
-        guard var note = try? store.find(id: noteId), !note.isDetached else { return }
-        note.isDetached = true
-        // Reuse the last known frame so a note dragged out again comes back the
-        // size the user left it.
-        note.frame = note.frame ?? DetachedFrame.defaultFrame(around: point)
-        try? store.upsert(note)
+        guard let existing = try? store.find(id: noteId), !existing.isDetached else { return }
+        mutate(noteId) { note in
+            note.isDetached = true
+            // Reuse the last known frame so a note dragged out again comes back
+            // the size the user left it.
+            note.frame = note.frame ?? DetachedFrame.defaultFrame(around: point)
+        }
         if selectedNoteId == noteId { selectedNoteId = nil }
+        hoveredNoteId = nil
         draggingNoteId = noteId
 
         windows?.beginDrag(noteId: noteId) { [weak self] in
@@ -168,9 +206,7 @@ final class AppState: ObservableObject {
     /// Puts a desktop note back into the dock. The window closes; the saved
     /// frame is kept, so dragging it out again returns it to the same spot.
     func returnToDock(_ noteId: String) {
-        guard var note = anyNote(noteId) else { return }
-        note.isDetached = false
-        try? store.upsert(note)
+        mutate(noteId) { $0.isDetached = false }
         windows?.close(noteId: noteId)
         reload()
     }
@@ -180,12 +216,10 @@ final class AppState: ObservableObject {
     /// The published lists are deliberately stale during a drag, and writing a
     /// stale copy back would undo the `isDetached` flag that was just set.
     func setFrame(_ frame: NoteFrame, for noteId: String) {
-        guard var note = try? store.find(id: noteId), note.frame != frame else { return }
-        note.frame = frame
-        try? store.upsert(note)
+        guard (try? store.find(id: noteId))?.frame != frame else { return }
         // Deliberately no reload(): a window move must not republish the whole
         // list and rebuild every view while the user is still dragging.
-        replaceInPublishedLists(note)
+        mutate(noteId) { $0.frame = frame }
     }
 
     // MARK: - Helpers
@@ -215,10 +249,10 @@ final class AppState: ObservableObject {
     }
 
     func unarchive(_ noteId: String) {
-        guard var note = try? store.find(id: noteId) else { return }
-        note.archivedAt = nil
-        note.updatedAt = Date()
-        try? store.upsert(note)
+        mutate(noteId) { note in
+            note.archivedAt = nil
+            note.updatedAt = Date()
+        }
         reload()
         onLocalEdit?()
     }

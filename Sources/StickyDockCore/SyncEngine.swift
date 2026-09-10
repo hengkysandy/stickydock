@@ -178,8 +178,7 @@ public final class SyncEngine: @unchecked Sendable {
             case .create(let noteId):
                 guard var note = try store.find(id: noteId) else { break }
                 let created = try bridge.create(
-                    account: account, folder: folder,
-                    rich: note.rich, knownIds: remote.map(\.id)
+                    account: account, folder: folder, rich: note.rich
                 )
                 note.notesId = created.id
                 note.syncedHash = ContentHash.of(created.text)
@@ -279,13 +278,22 @@ public final class SyncEngine: @unchecked Sendable {
             }
         }
 
-        sidecar.save(SidecarStore.merge(sidecar.load(), sheet))
+        // Merging with the file again would resurrect anything removed during
+        // this pass, so `sheet` is the answer and the file is only consulted for
+        // entries this pass never touched. Entries for notes that no longer
+        // exist anywhere are pruned, or the file grows for ever.
+        let liveIds = Set(try store.all().compactMap(\.notesId))
+        sheet.entries = sheet.entries.filter { liveIds.contains($0.key) }
+        sidecar.save(sheet)
         return report
     }
 
     private static var conflictStamp: DateFormatter {
         // Computed, not stored: DateFormatter is not Sendable.
         let f = DateFormatter()
+        // A fixed format needs a fixed locale, or the user's 12/24 hour setting
+        // and calendar can rewrite it into something else.
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd HH:mm"
         return f
     }

@@ -61,10 +61,9 @@ struct AllNotesView: View {
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                     if note.isArchived {
-                        Text("Archived")
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Capsule().fill(.secondary.opacity(0.18)))
+                        badge("Archived")
+                    } else if note.isDetached {
+                        badge("On desktop")
                     }
                 }
                 Text(note.text.replacingOccurrences(of: "\n", with: " "))
@@ -80,12 +79,19 @@ struct AllNotesView: View {
                 Button("Unarchive") { state.unarchive(note.id) }
                     .controlSize(.small)
             } else {
-                Button("Open") { onOpen(note) }
+                Button(note.isDetached ? "Show" : "Open") { onOpen(note) }
                     .controlSize(.small)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture { if !note.isArchived { onOpen(note) } }
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(Capsule().fill(.secondary.opacity(0.18)))
     }
 
     private func refresh() {

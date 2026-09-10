@@ -63,7 +63,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpHotKey()
 
         allNotes = AllNotesWindow(state: state) { [weak self] note in
-            self?.panel?.openEditor(for: note.id)
+            // A note that is out on the desktop is not in the dock's list, so
+            // opening it in the dock editor would show an empty panel. Bring its
+            // own window forward instead.
+            if note.isDetached {
+                self?.stickyWindows?.focus(noteId: note.id)
+            } else {
+                self?.panel?.openEditor(for: note.id)
+            }
         }
     }
 

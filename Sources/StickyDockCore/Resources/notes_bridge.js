@@ -98,16 +98,24 @@ var OPS = {
   create: function (req) {
     var Notes = Application('Notes');
     var folder = findFolder(findAccount(Notes, req.account), req.folder, true);
+
+    // The ids are snapshotted here, inside the same call that creates the note,
+    // rather than being passed in by the caller. Two earlier bugs came from
+    // trusting a caller-supplied list: creating two notes in one sync pass sent
+    // the same stale list twice and mapped both local notes onto one note in
+    // Notes, and any password-protected note in the folder was missing from the
+    // list (the listing filters those out) so it was picked as "the new one".
+    var before = {};
+    var existing = folder.notes();
+    for (var i = 0; i < existing.length; i++) { before[existing[i].id()] = true; }
+
     // body only. Passing `name` here would make Notes prepend a duplicate title.
     var note = Notes.Note({ body: req.html });
     folder.notes.push(note);
-    // push() returns nothing useful, so re-read the folder. The new note is the
-    // one id we did not have before.
-    var known = {};
-    (req.knownIds || []).forEach(function (id) { known[id] = true; });
-    var notes = folder.notes();
-    for (var i = 0; i < notes.length; i++) {
-      if (!known[notes[i].id()]) return { note: describe(notes[i]) };
+
+    var after = folder.notes();
+    for (var j = 0; j < after.length; j++) {
+      if (!before[after[j].id()]) { return { note: describe(after[j]) }; }
     }
     throw new Error('created a note but could not find it again');
   },

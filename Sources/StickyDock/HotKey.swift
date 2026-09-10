@@ -26,12 +26,11 @@ final class HotKey {
         Self.nextId += 1
         Self.handlers[id] = action
 
-        var hotKeyId = EventHotKeyID(signature: OSType(0x53544B44), id: id)  // 'STKD'
+        let hotKeyId = EventHotKeyID(signature: OSType(0x53544B44), id: id)  // 'STKD'
         var created: EventHotKeyRef?
         let status = RegisterEventHotKey(
             keyCode, modifiers, hotKeyId, GetApplicationEventTarget(), 0, &created
         )
-        _ = hotKeyId
         guard status == noErr, let created else {
             Self.handlers[id] = nil
             return nil

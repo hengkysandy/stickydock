@@ -354,6 +354,71 @@ struct SyncEngineRunTests {
         #expect(bridge.current.first?.body.contains("<i>this</i>") == true)
     }
 
+    @Test func twoNewNotesInOnePassGetTwoDifferentNotesIds() throws {
+        // This was broken: the caller passed a list of known ids captured before
+        // the pass, so the second create matched the first note as "the new one"
+        // and both local notes pointed at a single note in Apple Notes.
+        let (engine, store, bridge, dir) = try makeEngine(notes: [
+            Note(id: "a", text: "first note"),
+            Note(id: "b", text: "second note"),
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        #expect(try engine.runOnce().created == 2)
+        let first = try #require(try store.find(id: "a")?.notesId)
+        let second = try #require(try store.find(id: "b")?.notesId)
+        #expect(first != second, "each local note needs its own note in Apple Notes")
+        #expect(bridge.current.count == 2)
+    }
+
+    @Test func theSidecarDoesNotKeepEntriesForNotesThatAreGone() throws {
+        // Left unpruned this file grows for ever, and a colour could come back
+        // from the dead and attach itself to an unrelated note.
+        let sidecar = FakeSidecarStore()
+        sidecar.save(Sidecar(version: 1, entries: [
+            "ghost": SidecarEntry(color: .pink, sortIndex: 0, updatedAt: Date()),
+        ]))
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        try store.upsert(Note(id: "real", text: "still here", color: .blue))
+        let engine = SyncEngine(store: store, bridge: FakeNotesBridge(), sidecar: sidecar,
+                                account: "iCloud", folder: "StickyDock")
+
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries["ghost"] == nil, "the stale entry must be pruned")
+        let liveId = try #require(try store.find(id: "real")?.notesId)
+        #expect(sidecar.load().entries[liveId]?.color == .blue)
+    }
+
+    @Test func aColourSetOnAnotherMacIsNotThrownAwayByASyncHere() throws {
+        // Pruning must only remove entries whose note is genuinely gone, never
+        // one belonging to a note this Mac still has.
+        let sidecar = FakeSidecarStore()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        sidecar.save(Sidecar(version: 1, entries: [
+            "r1": SidecarEntry(color: .purple, sortIndex: 3, updatedAt: Date()),
+        ]))
+        let engine = SyncEngine(
+            store: store,
+            bridge: FakeNotesBridge(notes: [
+                RemoteNote(id: "r1", title: "x", text: "x",
+                           body: NoteHTML.toHTML("x"), modifiedAt: Date()),
+            ]),
+            sidecar: sidecar, account: "iCloud", folder: "StickyDock"
+        )
+
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries["r1"]?.color == .purple)
+        #expect(try store.find(notesId: "r1")?.color == .purple)
+    }
+
     @Test func remoteEditIsPulledIntoTheLocalCache() throws {
         let (engine, store, _, dir) = try makeEngine(
             notes: [Note(id: "l1", notesId: "r1", text: "old",
