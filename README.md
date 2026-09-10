@@ -4,8 +4,10 @@ Sticky notes docked to the edge of your Mac, that show up in Apple Notes on your
 iPhone.
 
 Move the pointer to the right edge of the screen and a thin stripe fans open into
-a deck of notes. Click one to edit it, or **drag it out onto the desktop** and it
-becomes a real sticky note window that stays where you put it. Everything you
+a deck of tabs, each note keeping its colour and its own vertical label. Rest on
+a tab for a peek at what is inside, click to open it clear of the deck, or
+**drag it out onto the desktop** and it becomes a real sticky note window that
+stays where you put it. Everything you
 write is mirrored into a folder called **StickyDock** in Apple Notes, so the same
 notes are on your phone, your iPad, and every other Mac signed into the same
 Apple ID.
@@ -68,6 +70,9 @@ what it makes. It never touches your real StickyDock folder.
 | | |
 |---|---|
 | Open the deck | Move the pointer to the right edge of the screen |
+| Peek at a note | Rest the pointer on its tab. Read-only, so a stray hover cannot change anything |
+| Bold / italic / underline | ⌘B, ⌘I, ⌘U |
+| Search inside a note | ⌘F, then ⌘G and ⇧⌘G for next and previous |
 | Put a note on the desktop | Drag it out of the deck |
 | Put it back | The `⇥` button in the note's top left corner |
 | Find a buried desktop note | Menu bar › Bring Desktop Notes to Front |
@@ -75,6 +80,14 @@ what it makes. It never touches your real StickyDock folder.
 | Close the editor | The `‹` in the corner |
 | Search everything | Menu bar › All Notes… |
 | Force a sync | Menu bar › Sync Now |
+
+**Formatting reaches your phone.** Bold, italic and underline are written into
+the note as `<b>`, `<i>` and `<u>`, which Apple Notes keeps verbatim, so a word
+bolded on the Mac is bold in Notes on the iPhone. Reading it back is deliberately
+careful: the characters come from the Notes `plaintext` property, which is always
+right, and only the tag positions come from the HTML body, which corrupts
+entities. If the two disagree, the formatting is dropped rather than guessed at,
+because putting bold on the wrong words is worse than losing it.
 
 **Desktop notes float above other windows.** This is a deliberate difference from
 Apple's Stickies, which sit at normal window level and get buried. The dock

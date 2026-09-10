@@ -99,7 +99,16 @@ final class DockPanel: NSPanel {
             let wanted = CGFloat(max(state.notes.count, 1)) * 19 + 20
             height = min(max(wanted, 60), visible.height * 0.66)
         } else {
-            width = state.selectedNoteId == nil ? Theme.expandedWidth : Theme.editorWidth
+            // The deck is only as wide as it needs to be: tabs alone, tabs plus
+            // a peek while the pointer rests on one, tabs plus the editor when a
+            // note is actually open.
+            if state.selectedNoteId != nil {
+                width = Theme.tabWidth + Theme.editorWidth + 16
+            } else if state.hoveredNote != nil {
+                width = Theme.tabWidth + Theme.peekWidth + 16
+            } else {
+                width = Theme.tabWidth + 10
+            }
             height = min(Theme.panelHeight, visible.height - 40)
         }
 

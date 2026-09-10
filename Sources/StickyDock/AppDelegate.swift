@@ -43,6 +43,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak panel] noteId in panel?.selectionChanged(to: noteId) }
             .store(in: &cancellables)
+        // The panel widens to make room for the peek, so hovering a tab has to
+        // re-anchor it just like selecting one does.
+        state.$hoveredNoteId
+            .receive(on: RunLoop.main)
+            .sink { [weak panel] _ in panel?.layoutForCurrentState() }
+            .store(in: &cancellables)
 
         // Desktop windows come back before the first sync, so notes that were on
         // screen at quit are on screen at launch.

@@ -1,7 +1,8 @@
 import SwiftUI
 import StickyDockCore
 
-/// The three states of the dock: a stripe of dots, a fanned deck, one open note.
+/// The dock: a stripe at rest, a column of tabs when reached for, and one note
+/// opened clear of the deck.
 struct DockContentView: View {
     @EnvironmentObject private var state: AppState
 
@@ -9,21 +10,20 @@ struct DockContentView: View {
         Group {
             if !state.isExpanded {
                 collapsedStripe
-            } else if let note = state.selectedNote {
-                NoteEditorView(note: note)
-                    .environmentObject(state)
-                    .padding(6)
             } else {
-                fannedDeck
+                HStack(alignment: .top, spacing: 8) {
+                    leftPane
+                    tabColumn
+                }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
     }
 
-    // MARK: - Dormant
+    // MARK: - At rest
 
-    /// A 14pt stripe, one dot per note. Deliberately tiny: it has to sit on the
-    /// edge of the screen all day without asking for attention.
+    /// A 14pt stripe, one coloured dash per note. Deliberately tiny: it has to
+    /// sit on the edge of the screen all day without asking for attention.
     private var collapsedStripe: some View {
         VStack(spacing: 5) {
             Spacer(minLength: 6)
@@ -34,9 +34,7 @@ struct DockContentView: View {
                     .shadow(color: .black.opacity(0.2), radius: 1, y: 1)
             }
             if state.notes.count > 14 {
-                Text("+")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+                Text("+").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
             }
             if state.notes.isEmpty {
                 Circle()
@@ -47,88 +45,104 @@ struct DockContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.ultraThinMaterial)
         )
         .accessibilityElement()
-        .accessibilityLabel(Text("StickyDock, \(state.notes.count) notes. Move the pointer here to open."))
+        .accessibilityLabel(Text(
+            "StickyDock, \(state.notes.count) notes. Move the pointer here to open."
+        ))
     }
 
-    // MARK: - Fanned
+    // MARK: - Reached for
 
-    private var fannedDeck: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("StickyDock").font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Button { state.newNote() } label: {
-                    Image(systemName: "plus.circle.fill").font(.system(size: 15))
-                }
-                .buttonStyle(.plain)
-                .help("New note")
-                .accessibilityLabel("New note")
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 6)
-
+    /// The notes shingle down the edge, each keeping its colour and its own
+    /// vertical tab.
+    private var tabColumn: some View {
+        VStack(spacing: -Theme.tabOverlap) {
             if state.notes.isEmpty {
-                emptyState(detachedCount: state.detachedNotes.count)
+                emptyTab
             } else {
-                // A gesture nobody knows about does not exist.
-                Text("Drag a note out to put it on the desktop")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
-
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 8) {
-                        ForEach(Array(state.notes.enumerated()), id: \.element.id) { index, note in
-                            NoteCardView(note: note, isTop: index == 0) {
-                                state.selectedNoteId = note.id
-                            }
-                            .environmentObject(state)
-                        }
+                ForEach(Array(state.notes.enumerated()), id: \.element.id) { index, note in
+                    NoteTabView(
+                        note: note,
+                        index: index,
+                        isSelected: state.selectedNoteId == note.id
+                    ) {
+                        state.selectedNoteId = note.id
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 10)
+                    .environmentObject(state)
+                    .zIndex(state.selectedNoteId == note.id ? 100 : Double(-index))
                 }
             }
-
-            Divider().opacity(0.2)
-            HStack(spacing: 4) {
-                Image(systemName: state.syncProblem == nil
-                      ? "checkmark.icloud" : "exclamationmark.icloud")
-                Text(state.syncProblem ?? state.lastSyncSummary).lineLimit(1)
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(state.syncProblem == nil ? Color.secondary : Color.red)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            Spacer(minLength: 8)
+            newNoteButton
         }
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.regularMaterial)
-        )
+        .frame(width: Theme.tabWidth)
+        .padding(.vertical, 10)
     }
 
-    private func emptyState(detachedCount: Int) -> some View {
-        VStack(spacing: 8) {
-            Spacer()
-            Image(systemName: "note.text").font(.system(size: 26)).foregroundStyle(.tertiary)
-            // An empty deck means something different when notes are on the
-            // desktop. Saying "no notes yet" there would just be wrong.
-            Text(detachedCount == 0
-                 ? "No notes yet"
-                 : "All \(detachedCount) notes are on the desktop")
-                .font(.system(size: 12))
+    private var emptyTab: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "note.text").font(.system(size: 15)).foregroundStyle(.secondary)
+            Text(state.detachedNotes.isEmpty ? "Empty" : "On desk")
+                .font(.system(size: 8, weight: .medium))
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("New note") { state.newNote() }
-                .controlSize(.small)
-            Spacer()
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: Theme.tabWidth, height: 56)
+        .background(TabShape().fill(.ultraThinMaterial))
+    }
+
+    private var newNoteButton: some View {
+        HStack(spacing: 5) {
+            Button { state.newNote() } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.primary, .ultraThinMaterial)
+            }
+            .buttonStyle(.plain)
+            .help("New note  (⌃⌥N)")
+            .accessibilityLabel("New note")
+
+            Image(systemName: state.syncProblem == nil ? "checkmark.icloud" : "exclamationmark.icloud")
+                .font(.system(size: 11))
+                .foregroundStyle(state.syncProblem == nil ? Color.secondary : Color.red)
+                .help(state.syncProblem ?? state.lastSyncSummary)
+        }
+        .padding(.trailing, 6)
+        .frame(width: Theme.tabWidth, alignment: .trailing)
+    }
+
+    // MARK: - Opened clear of the deck
+
+    /// Lines the peek up with its tab, then pulls it back inside the panel if
+    /// that would push it off the bottom.
+    private func peekOffset(for note: Note) -> CGFloat {
+        guard let index = state.notes.firstIndex(where: { $0.id == note.id }) else { return 0 }
+        let raw = CGFloat(index) * (Theme.tabHeight - Theme.tabOverlap)
+        let maximum = max(0, Theme.panelHeight - 200)
+        return min(raw, maximum)
+    }
+
+    @ViewBuilder
+    private var leftPane: some View {
+        if let note = state.selectedNote {
+            NoteEditorView(note: note)
+                .environmentObject(state)
+                .frame(width: Theme.editorWidth)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else if let hovered = state.hoveredNote {
+            // Sits beside the tab the pointer is actually on, not at the top of
+            // the panel, so the peek reads as belonging to that note.
+            VStack(spacing: 0) {
+                Spacer().frame(height: peekOffset(for: hovered))
+                NotePeekView(note: hovered)
+                Spacer(minLength: 0)
+            }
+            .frame(width: Theme.peekWidth)
+            .transition(.opacity)
+            .allowsHitTesting(false)
+        } else {
+            Color.clear.frame(width: 0)
+        }
     }
 }

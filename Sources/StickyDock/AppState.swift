@@ -19,6 +19,9 @@ final class AppState: ObservableObject {
     /// The note currently being pulled out of the deck. Its card stays in the
     /// list, dimmed, until the drag finishes.
     @Published var draggingNoteId: String?
+    /// The tab the pointer is over. Drives the sneak peek, and it is the panel's
+    /// width that follows it, so it lives here rather than inside a view.
+    @Published var hoveredNoteId: String?
 
     let store: NoteStoring
     private let onNotesChanged: () -> Void
@@ -38,6 +41,11 @@ final class AppState: ObservableObject {
         return notes.first { $0.id == selectedNoteId }
     }
 
+    var hoveredNote: Note? {
+        guard let hoveredNoteId, hoveredNoteId != selectedNoteId else { return nil }
+        return notes.first { $0.id == hoveredNoteId }
+    }
+
     /// Owns the desktop windows. Set by the app delegate once, so the views can
     /// ask for a note to be detached without knowing anything about AppKit.
     weak var windows: StickyWindowManager?
@@ -49,6 +57,9 @@ final class AppState: ObservableObject {
         // editor showing a ghost.
         if let id = selectedNoteId, !notes.contains(where: { $0.id == id }) {
             selectedNoteId = nil
+        }
+        if let id = hoveredNoteId, !notes.contains(where: { $0.id == id }) {
+            hoveredNoteId = nil
         }
         onNotesChanged()
     }

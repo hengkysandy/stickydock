@@ -26,7 +26,22 @@ enum Theme {
 
     static let cardRadius: CGFloat = 10
     static let collapsedWidth: CGFloat = 14
-    static let expandedWidth: CGFloat = 340
-    static let editorWidth: CGFloat = 380
+
+    /// The fanned deck is a column of tabs hugging the screen edge. It stays
+    /// narrow: the tabs are a way in, not the content.
+    static let tabWidth: CGFloat = 56
+    static let tabHeight: CGFloat = 82
+    static let tabLabelWidth: CGFloat = 17
+    static let tabOverlap: CGFloat = 6
+    /// Each tab arrives a beat after the one above it.
+    static let tabStagger: Double = 0.045
+
+    static let peekWidth: CGFloat = 236
+    static let editorWidth: CGFloat = 330
     static let panelHeight: CGFloat = 470
+
+    /// A slightly deeper version of the note colour, for the tab's label strip.
+    static func labelStrip(_ color: NoteColor) -> Color {
+        fill(color).opacity(0.72)
+    }
 }
