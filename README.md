@@ -30,6 +30,18 @@ The cost is that Apple Notes raises no change events, so StickyDock polls: every
 15 seconds while the dock is open, every 60 seconds while it is a stripe on the
 edge of the screen.
 
+## Install
+
+Grab the `.dmg` from [Releases](https://github.com/hengkysandy/stickydock/releases),
+open it, and drag StickyDock to Applications.
+
+**macOS will refuse to open it the first time.** The app is signed, but with a
+free Apple Development certificate and it is not notarized, so Gatekeeper treats
+it as coming from an unidentified developer. Right-click the app and choose
+**Open**, then confirm. You only have to do that once. If you would rather not,
+build it yourself with the two commands below; a locally built app carries no
+quarantine flag and Gatekeeper never looks at it.
+
 ## Requirements
 
 - macOS 14 or later.
@@ -45,15 +57,18 @@ one.
 ## Build and run
 
 ```bash
-./scripts/build.sh   # builds and signs build/StickyDock.app
-./scripts/run.sh     # builds, kills any running copy, relaunches
+./scripts/build.sh    # builds and signs build/StickyDock.app
+./scripts/run.sh      # builds, kills any running copy, relaunches
+./scripts/package.sh  # builds the .dmg for a release
 ```
 
 `build.sh` signs with a real certificate rather than ad-hoc on purpose. macOS ties
 the Automation permission grant to the code signature, and an ad-hoc signature
 gets a new hash on every build, so ad-hoc would make macOS re-ask "StickyDock
-wants to control Notes" after every single rebuild. Override the identity with
-`STICKYDOCK_IDENTITY="..."` if you need a different one.
+wants to control Notes" after every single rebuild. It picks up whichever Apple
+Development certificate is in your keychain; set `STICKYDOCK_IDENTITY="..."` to
+choose a specific one. With no certificate at all it falls back to ad-hoc, which
+works but re-prompts for Automation on every build.
 
 ## Tests
 
