@@ -305,11 +305,32 @@ public final class SyncEngine: @unchecked Sendable {
             }
         }
 
-        // Merging with the file again would resurrect anything removed during
-        // this pass, so `sheet` is the answer and the file is only consulted for
-        // entries this pass never touched. Entries for notes that no longer
-        // exist anywhere are pruned, or the file grows for ever.
-        let liveIds = Set(try store.all().compactMap(\.notesId))
+        // Every note that lives in Apple Notes gets an entry, not only the ones
+        // this pass happened to create or push. Colour is not part of the note's
+        // text, so changing it triggers no sync action at all, and adopted notes
+        // were never written here either: the file ended up describing a
+        // fraction of the notes, with stale colours for the rest, and none of it
+        // reached the other Mac.
+        let live = try store.all().filter { !$0.isDeleted }
+        for note in live {
+            guard let notesId = note.notesId else { continue }
+            guard let existing = sheet.entries[notesId] else {
+                sheet.entries[notesId] = SidecarEntry(
+                    color: note.color, sortIndex: note.sortIndex, updatedAt: note.updatedAt
+                )
+                continue
+            }
+            let differs = existing.color != note.color || existing.sortIndex != note.sortIndex
+            // Only overwrite when this Mac's version is genuinely newer, or a
+            // colour picked on the other Mac would be undone on every poll.
+            if differs, note.updatedAt > existing.updatedAt {
+                sheet.entries[notesId] = SidecarEntry(
+                    color: note.color, sortIndex: note.sortIndex, updatedAt: note.updatedAt
+                )
+            }
+        }
+
+        let liveIds = Set(live.compactMap(\.notesId))
         sheet.entries = sheet.entries.filter { liveIds.contains($0.key) }
         sidecar.save(sheet)
         return report

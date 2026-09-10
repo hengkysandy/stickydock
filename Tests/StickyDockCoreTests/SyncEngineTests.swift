@@ -485,6 +485,83 @@ struct SyncEngineRunTests {
         #expect(try store.find(id: "drop") == nil, "delete really deletes")
     }
 
+    @Test func everyNoteInAppleNotesGetsASidecarEntry() throws {
+        // Adopted notes used to get no entry at all, so their colour never
+        // reached the other Mac.
+        let sidecar = FakeSidecarStore()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        let engine = SyncEngine(
+            store: store,
+            bridge: FakeNotesBridge(notes: [
+                RemoteNote(id: "r1", title: "a", text: "a", body: NoteHTML.toHTML("a"),
+                           modifiedAt: Date()),
+                RemoteNote(id: "r2", title: "b", text: "b", body: NoteHTML.toHTML("b"),
+                           modifiedAt: Date()),
+            ]),
+            sidecar: sidecar, account: "iCloud", folder: "StickyDock"
+        )
+
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries.count == 2)
+    }
+
+    @Test func changingOnlyTheColourStillReachesTheSidecar() throws {
+        // A colour change alters no text, so it triggers no push. Without this
+        // the sidecar kept the colour the note had when it was first synced.
+        let sidecar = FakeSidecarStore()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        try store.upsert(Note(id: "l1", text: "coloured", color: .yellow))
+        let engine = SyncEngine(store: store, bridge: FakeNotesBridge(), sidecar: sidecar,
+                                account: "iCloud", folder: "StickyDock")
+        _ = try engine.runOnce()
+        let notesId = try #require(try store.find(id: "l1")?.notesId)
+        #expect(sidecar.load().entries[notesId]?.color == .yellow)
+
+        var note = try #require(try store.find(id: "l1"))
+        note.color = .purple
+        note.updatedAt = Date().addingTimeInterval(60)
+        try store.upsert(note)
+
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries[notesId]?.color == .purple)
+    }
+
+    @Test func aColourSetMoreRecentlyOnTheOtherMacIsNotUndone() throws {
+        // The entry only loses to a local change that is genuinely newer,
+        // otherwise every poll here would overwrite the other Mac's choice.
+        let sidecar = FakeSidecarStore()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        try store.upsert(Note(id: "l1", notesId: "r1", text: "x", color: .yellow,
+                              updatedAt: Date().addingTimeInterval(-3600),
+                              syncedHash: ContentHash.of("x")))
+        sidecar.save(Sidecar(version: 1, entries: [
+            "r1": SidecarEntry(color: .green, sortIndex: 0, updatedAt: Date()),
+        ]))
+        let engine = SyncEngine(
+            store: store,
+            bridge: FakeNotesBridge(notes: [
+                RemoteNote(id: "r1", title: "x", text: "x", body: NoteHTML.toHTML("x"),
+                           modifiedAt: Date()),
+            ]),
+            sidecar: sidecar, account: "iCloud", folder: "StickyDock"
+        )
+
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries["r1"]?.color == .green)
+    }
+
     @Test func remoteEditIsPulledIntoTheLocalCache() throws {
         let (engine, store, _, dir) = try makeEngine(
             notes: [Note(id: "l1", notesId: "r1", text: "old",
