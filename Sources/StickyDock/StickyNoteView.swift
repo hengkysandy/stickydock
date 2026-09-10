@@ -31,6 +31,7 @@ struct StickyNoteView: View {
                 RichTextEditorView(
                     rich: $rich,
                     textColor: Theme.inkNS,
+                    noteId: noteId,
                     // Escape hands focus back to whatever the user was in
                     // before, rather than closing the note.
                     onEscape: { NSApp.deactivate() },

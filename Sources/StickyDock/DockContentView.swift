@@ -136,6 +136,10 @@ struct DockContentView: View {
         if let note = state.selectedNote {
             NoteEditorView(note: note)
                 .environmentObject(state)
+                // A new identity per note. Without it SwiftUI reuses the editor
+                // and its @State, so switching notes left the previous note's
+                // text on screen under the new note's title.
+                .id(note.id)
                 .frame(width: Theme.editorWidth)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
         } else if let hovered = state.hoveredNote {

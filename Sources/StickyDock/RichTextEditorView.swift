@@ -6,6 +6,8 @@ import SwiftUI
 struct RichTextEditorView: NSViewRepresentable {
     @Binding var rich: RichText
     var textColor: NSColor = .black
+    /// The note being shown, so a switch can be told apart from an echo.
+    var noteId: String
     /// Focus is taken when the note is opened deliberately, never when a note
     /// merely appears on screen.
     var focusOnAppear: Bool = false
@@ -50,6 +52,7 @@ struct RichTextEditorView: NSViewRepresentable {
         textView.onFocusChange = { coordinator.parent.onEditingChange($0) }
         scrollView.documentView = textView
         context.coordinator.textView = textView
+        textView.showingNoteId = noteId
         textView.noteContent = rich
 
         if focusOnAppear {
@@ -66,6 +69,14 @@ struct RichTextEditorView: NSViewRepresentable {
         context.coordinator.parent = self
         textView.textColor = textColor
         textView.insertionPointColor = textColor
+        // A different note always loads, focus or no focus. The rule below
+        // exists to protect what is being typed, not to pin the editor to a note
+        // the user has already moved on from.
+        if textView.showingNoteId != noteId {
+            textView.showingNoteId = noteId
+            textView.noteContent = rich
+            return
+        }
         // Never rewrite a view the user is typing in. The binding can be a few
         // hundred milliseconds behind the keyboard, and replacing the whole
         // attributed string from a stale value is exactly what made the note

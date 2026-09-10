@@ -18,6 +18,14 @@ final class NoteTextView: NSTextView {
     /// database, the authority on what the note says.
     var isTyping: Bool { window?.firstResponder === self }
 
+    /// Which note this view is currently showing.
+    ///
+    /// The "do not overwrite a view the user is typing in" rule has to know the
+    /// difference between a stale echo of that typing and a genuinely different
+    /// note. Without this, switching notes while the caret was in the editor
+    /// left the previous note's text on screen.
+    var showingNoteId: String?
+
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
         if became { onFocusChange?(true) }

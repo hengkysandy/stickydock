@@ -17,6 +17,7 @@ struct NoteEditorView: View {
             RichTextEditorView(
                 rich: $rich,
                 textColor: Theme.inkNS,
+                noteId: note.id,
                 focusOnAppear: true,
                 onEscape: { state.selectedNoteId = nil },
                 onEditingChange: { isTyping = $0 }
