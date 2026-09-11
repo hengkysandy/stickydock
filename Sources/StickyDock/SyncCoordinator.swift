@@ -43,6 +43,16 @@ final class SyncCoordinator {
         runSync()
     }
 
+    /// Called when the pause setting changes, so turning it back on syncs at
+    /// once rather than waiting out the current interval.
+    func pauseChanged() {
+        if Preferences.syncPaused {
+            state?.lastSyncSummary = "Syncing paused"
+        } else {
+            scheduleTimer(after: 0.2)
+        }
+    }
+
     private func scheduleTimer(after seconds: TimeInterval) {
         timer?.invalidate()
         let timer = Timer(timeInterval: seconds, repeats: false) { [weak self] _ in
@@ -62,6 +72,13 @@ final class SyncCoordinator {
 
     private func runSync() {
         guard !running else {
+            scheduleTimer(after: nextInterval())
+            return
+        }
+        // Paused means paused. Edits still save locally; only the trip to
+        // Apple Notes waits, and it resumes without needing a nudge.
+        if Preferences.syncPaused {
+            state?.lastSyncSummary = "Syncing paused"
             scheduleTimer(after: nextInterval())
             return
         }

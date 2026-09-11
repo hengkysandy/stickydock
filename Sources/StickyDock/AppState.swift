@@ -42,6 +42,11 @@ final class AppState: ObservableObject {
         return notes.first { $0.id == selectedNoteId }
     }
 
+    /// Drops the peek at once, for the cases where the deck itself is going away.
+    func clearHoverImmediately() {
+        hoveredNoteId = nil
+    }
+
     var hoveredNote: Note? {
         guard let hoveredNoteId, hoveredNoteId != selectedNoteId else { return nil }
         return notes.first { $0.id == hoveredNoteId }

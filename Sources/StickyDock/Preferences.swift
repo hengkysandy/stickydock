@@ -13,6 +13,8 @@ struct Preferences {
         static let folder = "notesFolder"
         static let pollSeconds = "pollSeconds"
         static let hotKeyEnabled = "hotKeyEnabled"
+        static let syncPaused = "syncPaused"
+        static let dockHidden = "dockHidden"
     }
 
     /// The Notes account to mirror into. iCloud is the one that reaches the phone.
@@ -31,6 +33,20 @@ struct Preferences {
     static var hotKeyEnabled: Bool {
         get { defaults.object(forKey: Key.hotKeyEnabled) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.hotKeyEnabled) }
+    }
+
+    /// Syncing held off until the user turns it back on. Edits keep saving
+    /// locally the whole time; only the trip to Apple Notes waits.
+    static var syncPaused: Bool {
+        get { defaults.bool(forKey: Key.syncPaused) }
+        set { defaults.set(newValue, forKey: Key.syncPaused) }
+    }
+
+    /// The edge dock hidden from view. The menu bar item stays, so there is
+    /// always a way back.
+    static var dockHidden: Bool {
+        get { defaults.bool(forKey: Key.dockHidden) }
+        set { defaults.set(newValue, forKey: Key.dockHidden) }
     }
 
     /// Where the local cache lives. Application Support, not iCloud: it is a

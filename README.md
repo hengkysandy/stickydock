@@ -234,6 +234,7 @@ what it makes. It never touches your real StickyDock folder.
 | Put a note on the desktop | Drag it out of the deck |
 | Put it back | The `⇥` button in the note's top left corner |
 | Find a buried desktop note | Menu bar › Bring Desktop Notes to Front |
+| Settings | Menu bar › Settings |
 | New note | `⌃⌥N` from anywhere, or the `+` in the deck, or the menu bar |
 | Close the editor | The `‹` in the corner |
 | Search everything | Menu bar › All Notes… |
@@ -296,16 +297,33 @@ else carries on working.
 
 ## Settings
 
-There is no settings window yet. The two settings that exist live in
-`UserDefaults`:
+In the menu bar, under **Settings**:
+
+| | |
+|---|---|
+| **Open at Login** | Starts StickyDock when you log in. Uses the system's own login-items list, so you can also turn it off in System Settings, General, Login Items. If you do, the menu says so instead of showing a stale tick. |
+| **New Note Shortcut ⌃⌥N** | Turns the global shortcut off, for when it clashes with something else. Takes effect at once, no relaunch. |
+| **Pause Syncing** | Stops talking to Apple Notes. Your edits keep saving locally the whole time; they go out when you switch it back on. |
+| **Hide Dock** | Hides the edge dock. The menu bar item stays, so there is always a way back. |
+| **Reveal Database in Finder** | Opens the folder holding the local cache. |
+
+**Open at Login needs the app to be in Applications.** macOS will not add a login
+item for an app sitting in a build folder or on a mounted disk image. If it
+refuses, StickyDock says so and tells you why rather than failing quietly.
+
+Under **About StickyDock**: the version, a link to the Releases page, and a link
+to the source.
+
+### Settings with no menu item yet
+
+The folder and account are still `defaults write` only:
 
 ```bash
 defaults write com.hengkysandy.stickydock notesFolder  "Stickies"
 defaults write com.hengkysandy.stickydock notesAccount "iCloud"
-defaults write com.hengkysandy.stickydock hotKeyEnabled -bool false
 ```
 
-Quit and relaunch after changing one.
+Quit and relaunch after changing either.
 
 ## Layout
 

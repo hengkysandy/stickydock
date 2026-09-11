@@ -29,7 +29,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = DockPanel(state: state)
         self.panel = panel
         panel.layoutForCurrentState(animated: false)
-        panel.orderFront(nil)
+        if Preferences.dockHidden {
+            panel.setHidden(true)
+        } else {
+            panel.orderFront(nil)
+        }
 
         // The stripe's height follows the note count, so any change to the list
         // has to re-anchor the panel.
@@ -178,6 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(folder)
 
         menu.addItem(.separator())
+        menu.addItem(settingsItem())
+        menu.addItem(aboutItem())
+        menu.addItem(.separator())
         let quit = NSMenuItem(
             title: "Quit StickyDock",
             action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"
@@ -188,6 +195,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let statusLineTag = 991
     private static let desktopNotesTag = 992
+    private enum Toggle: Int {
+        case openAtLogin = 801, hotKey = 802, pauseSync = 803, hideDock = 804
+    }
+
+    /// Settings live in a submenu rather than at the top level, so the things
+    /// used every day stay one click away.
+    private func settingsItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "Settings")
+
+        let entries: [(String, Toggle, Selector)] = [
+            ("Open at Login", .openAtLogin, #selector(toggleOpenAtLogin)),
+            ("New Note Shortcut  ⌃⌥N", .hotKey, #selector(toggleHotKey)),
+            ("Pause Syncing", .pauseSync, #selector(togglePauseSync)),
+            ("Hide Dock", .hideDock, #selector(toggleHideDock)),
+        ]
+        for (title, tag, action) in entries {
+            if tag == .pauseSync { menu.addItem(.separator()) }
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            entry.tag = tag.rawValue
+            menu.addItem(entry)
+        }
+
+        menu.addItem(.separator())
+        let reveal = NSMenuItem(
+            title: "Reveal Database in Finder", action: #selector(revealDatabase), keyEquivalent: ""
+        )
+        reveal.target = self
+        menu.addItem(reveal)
+
+        item.submenu = menu
+        return item
+    }
+
+    private func aboutItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "About StickyDock", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "About")
+
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+            as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let line = NSMenuItem(title: "Version \(version) (\(build))", action: nil, keyEquivalent: "")
+        line.isEnabled = false
+        menu.addItem(line)
+
+        let updates = NSMenuItem(
+            title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: ""
+        )
+        updates.target = self
+        menu.addItem(updates)
+
+        let source = NSMenuItem(
+            title: "Source on GitHub…", action: #selector(openSource), keyEquivalent: ""
+        )
+        source.target = self
+        menu.addItem(source)
+
+        item.submenu = menu
+        return item
+    }
+
+    private static let releasesURL = "https://github.com/hengkysandy/stickydock/releases"
+    private static let sourceURL = "https://github.com/hengkysandy/stickydock"
 
     // MARK: - Menu actions
 
@@ -207,6 +278,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func syncNow() {
         coordinator?.syncNow()
+    }
+
+    // MARK: - Settings
+
+    @objc private func toggleOpenAtLogin() {
+        let wanted = !LoginItem.isEnabled
+        if let problem = LoginItem.set(wanted) {
+            let alert = NSAlert()
+            alert.messageText = "Could not change Open at Login"
+            alert.informativeText = problem
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    @objc private func toggleHotKey() {
+        Preferences.hotKeyEnabled.toggle()
+        hotKey?.unregister()
+        hotKey = nil
+        setUpHotKey()
+    }
+
+    @objc private func togglePauseSync() {
+        Preferences.syncPaused.toggle()
+        coordinator?.pauseChanged()
+    }
+
+    @objc private func toggleHideDock() {
+        Preferences.dockHidden.toggle()
+        panel?.setHidden(Preferences.dockHidden)
+    }
+
+    @objc private func revealDatabase() {
+        NSWorkspace.shared.activateFileViewerSelecting([Preferences.databaseURL])
+    }
+
+    @objc private func checkForUpdates() {
+        if let url = URL(string: Self.releasesURL) { NSWorkspace.shared.open(url) }
+    }
+
+    @objc private func openSource() {
+        if let url = URL(string: Self.sourceURL) { NSWorkspace.shared.open(url) }
     }
 
     private func fatalCannotOpenDatabase(_ error: Error) {
@@ -231,6 +344,23 @@ extension AppDelegate: NSMenuDelegate {
             guard let state, let items = statusItem?.menu?.items else { return }
             items.first { $0.tag == Self.statusLineTag }?
                 .title = state.syncProblem ?? state.lastSyncSummary
+            if let settings = items.first(where: { $0.submenu?.title == "Settings" })?.submenu {
+                for entry in settings.items {
+                    switch Toggle(rawValue: entry.tag) {
+                    case .openAtLogin:
+                        entry.state = LoginItem.isEnabled ? .on : .off
+                        // The user can switch this off in System Settings, and
+                        // the menu should say so rather than show a stale tick.
+                        entry.title = LoginItem.deniedByUser
+                            ? "Open at Login  (blocked in System Settings)"
+                            : "Open at Login"
+                    case .hotKey:   entry.state = Preferences.hotKeyEnabled ? .on : .off
+                    case .pauseSync: entry.state = Preferences.syncPaused ? .on : .off
+                    case .hideDock:  entry.state = Preferences.dockHidden ? .on : .off
+                    case .none:      break
+                    }
+                }
+            }
             if let front = items.first(where: { $0.tag == Self.desktopNotesTag }) {
                 let count = stickyWindows?.openCount ?? 0
                 front.isHidden = count == 0
