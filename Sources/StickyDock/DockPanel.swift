@@ -223,8 +223,8 @@ final class DockPanel: NSPanel {
         TextViewFocus.focus(in: self) { [weak self] in self?.state.selectedNoteId != nil }
     }
 
-    /// Hides or shows the edge dock. The menu bar item is untouched, so there is
-    /// always a way to bring it back.
+    /// Hides or shows the edge stripe. The menu bar item is untouched, so there
+    /// is always a way to bring it back.
     func setHidden(_ hidden: Bool) {
         if hidden {
             state.selectedNoteId = nil

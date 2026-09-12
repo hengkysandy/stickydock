@@ -227,7 +227,7 @@ what it makes. It never touches your real StickyDock folder.
 
 | | |
 |---|---|
-| Open the deck | Move the pointer onto the resting pill at the right edge |
+| Open the deck | Move the pointer onto the edge stripe at the right of the screen |
 | Peek at a note | Rest the pointer on its tab. Read-only, so a stray hover cannot change anything |
 | Bold / italic / underline | ⌘B, ⌘I, ⌘U |
 | Search inside a note | ⌘F, then ⌘G and ⇧⌘G for next and previous |
@@ -258,10 +258,10 @@ top? Settings › Keep Desktop Notes on Top.
 nothing else: whatever you were typing in keeps the focus. Only clicking a note
 moves the caret into StickyDock, and closing that note hands the keyboard back.
 
-**Only the pill is hot.** The window behind the resting pill is taller than the
-pill, so that opening the deck does not make it jump about, but the pointer has
-to be on the pill itself before anything happens. Empty space above and below it
-is not a trigger.
+**Only the stripe is hot.** The window behind the edge stripe is taller than the
+stripe, so that opening the deck does not make it jump about, but the pointer has
+to be on the stripe itself before anything happens. Empty space above and below
+it is not a trigger.
 
 **Desktop notes float above other windows.** This is a deliberate difference from
 Apple's Stickies, which sit at normal window level and get buried. The dock
@@ -319,10 +319,10 @@ In the menu bar, under **Settings**:
 | **Open at Login** | Starts StickyDock when you log in. Uses the system's own login-items list, so you can also turn it off in System Settings, General, Login Items. If you do, the menu says so instead of showing a stale tick. |
 | **New Note Shortcut ⌃⌥N** | Turns the global shortcut off, for when it clashes with something else. Takes effect at once, no relaunch. |
 | **Pause Syncing** | Stops talking to Apple Notes. Your edits keep saving locally the whole time; they go out when you switch it back on. |
-| **Hide Dock** | Hides the edge dock. The menu bar item stays, so there is always a way back. |
+| **Hide Edge Stripe** | Takes the coloured stripe off the screen edge. The menu bar item stays, so there is always a way back, and your notes are untouched. |
 | **Keep Desktop Notes on Top** | Off by default. Desktop notes normally sit behind whatever you are working in, like Apple's Stickies. Turn this on to pin them above everything. |
 | **Keyboard Shortcuts…** | Set your own shortcut for any of four actions. |
-| **Reveal Database in Finder** | Opens the folder holding the local cache. |
+| **Show Local Files in Finder** | Opens the folder holding the local cache. |
 
 **Open at Login needs the app to be in Applications.** macOS will not add a login
 item for an app sitting in a build folder or on a mounted disk image. If it
@@ -340,7 +340,7 @@ Settings › Keyboard Shortcuts… Click a shortcut, press the keys you want,
 |---|---|
 | New Note | ⌃⌥N |
 | Keep Desktop Notes on Top | none |
-| Hide or Show the Dock | none |
+| Show or Hide the Edge Stripe | none |
 | Pause or Resume Syncing | none |
 
 Only New Note ships with a shortcut. Claiming four combinations out of the box

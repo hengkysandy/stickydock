@@ -17,17 +17,17 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
         switch self {
         case .newNote:          "New Note"
         case .toggleNotesOnTop: "Keep Desktop Notes on Top"
-        case .toggleDock:       "Hide or Show the Dock"
+        case .toggleDock:       "Show or Hide the Edge Stripe"
         case .togglePauseSync:  "Pause or Resume Syncing"
         }
     }
 
     var detail: String {
         switch self {
-        case .newNote:          "Creates a note and opens it, from any app."
-        case .toggleNotesOnTop: "Flips desktop notes between floating and ordinary."
-        case .toggleDock:       "Hides the edge dock, or brings it back."
-        case .togglePauseSync:  "Holds off talking to Apple Notes, or resumes."
+        case .newNote:          "Makes a note and opens it, from any app."
+        case .toggleNotesOnTop: "Pins desktop notes above other windows, or lets them sit behind."
+        case .toggleDock:       "Takes the coloured stripe off the screen edge, or puts it back."
+        case .togglePauseSync:  "Stops or resumes syncing with Apple Notes."
         }
     }
 

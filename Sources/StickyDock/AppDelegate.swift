@@ -209,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ("Open at Login", .openAtLogin, #selector(toggleOpenAtLogin)),
             ("New Note Shortcut", .hotKey, #selector(toggleHotKey)),
             ("Pause Syncing", .pauseSync, #selector(togglePauseSync)),
-            ("Hide Dock", .hideDock, #selector(toggleHideDock)),
+            ("Hide Edge Stripe", .hideDock, #selector(toggleHideDock)),
             ("Keep Desktop Notes on Top", .notesOnTop, #selector(toggleNotesOnTop)),
         ]
         for (title, tag, action) in entries {
@@ -228,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(shortcuts)
 
         let reveal = NSMenuItem(
-            title: "Reveal Database in Finder", action: #selector(revealDatabase), keyEquivalent: ""
+            title: "Show Local Files in Finder", action: #selector(revealDatabase), keyEquivalent: ""
         )
         reveal.target = self
         menu.addItem(reveal)

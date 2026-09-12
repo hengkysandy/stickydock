@@ -43,7 +43,7 @@ struct Preferences {
         set { defaults.set(newValue, forKey: Key.syncPaused) }
     }
 
-    /// The edge dock hidden from view. The menu bar item stays, so there is
+    /// The edge stripe hidden from view. The menu bar item stays, so there is
     /// always a way back.
     static var dockHidden: Bool {
         get { defaults.bool(forKey: Key.dockHidden) }

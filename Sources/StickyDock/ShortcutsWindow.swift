@@ -40,14 +40,19 @@ struct ShortcutsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
-        .frame(width: 430)
+        .frame(width: 460)
     }
 
     private func row(for action: ShortcutAction) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(action.title).font(.system(size: 12, weight: .medium))
-                Text(action.detail).font(.system(size: 10)).foregroundStyle(.secondary)
+                // Wraps rather than truncates. A description cut off at "or le…"
+                // is worse than no description at all.
+                Text(action.detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             ShortcutRecorder(combo: Preferences.shortcut(for: action)) { combo in
@@ -84,7 +89,7 @@ final class ShortcutsWindow {
             return
         }
         let created = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 430, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 340),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
