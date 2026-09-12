@@ -39,7 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // has to re-anchor the panel.
         state.$notes
             .receive(on: RunLoop.main)
-            .sink { [weak panel] _ in panel?.layoutForCurrentState() }
+            .sink { [weak panel] _ in
+                panel?.layoutForCurrentState()
+                // The pill grows and shrinks with the note count, and the hot
+                // zone is the pill.
+                panel?.refreshHotZone()
+            }
             .store(in: &cancellables)
         // Opening a note has to take keyboard focus, or the editor gets no
         // keystrokes. Closing it has to give focus back.

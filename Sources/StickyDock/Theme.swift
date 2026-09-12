@@ -36,6 +36,13 @@ enum Theme {
     /// Each tab arrives a beat after the one above it.
     static let tabStagger: Double = 0.045
 
+    /// How tall the resting pill is for a given number of notes. The panel and
+    /// the view both need this: one to draw it, the other to decide where the
+    /// pointer has to be before the deck reacts.
+    static func stripeHeight(noteCount: Int) -> CGFloat {
+        max(CGFloat(min(noteCount, 14)) * 19 + 20, 44)
+    }
+
     static let peekWidth: CGFloat = 236
     static let editorWidth: CGFloat = 330
     static let panelHeight: CGFloat = 470

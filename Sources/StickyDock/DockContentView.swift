@@ -57,9 +57,7 @@ struct DockContentView: View {
         ))
     }
 
-    private var stripeHeight: CGFloat {
-        max(CGFloat(min(state.notes.count, 14)) * 19 + 20, 44)
-    }
+    private var stripeHeight: CGFloat { Theme.stripeHeight(noteCount: state.notes.count) }
 
     // MARK: - Reached for
 

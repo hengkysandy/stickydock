@@ -227,7 +227,7 @@ what it makes. It never touches your real StickyDock folder.
 
 | | |
 |---|---|
-| Open the deck | Move the pointer to the right edge of the screen |
+| Open the deck | Move the pointer onto the resting pill at the right edge |
 | Peek at a note | Rest the pointer on its tab. Read-only, so a stray hover cannot change anything |
 | Bold / italic / underline | ⌘B, ⌘I, ⌘U |
 | Search inside a note | ⌘F, then ⌘G and ⇧⌘G for next and previous |
@@ -247,6 +247,15 @@ careful: the characters come from the Notes `plaintext` property, which is alway
 right, and only the tag positions come from the HTML body, which corrupts
 entities. If the two disagree, the formatting is dropped rather than guessed at,
 because putting bold on the wrong words is worse than losing it.
+
+**Reaching for the deck never takes your keyboard.** Hovering opens it and
+nothing else: whatever you were typing in keeps the focus. Only clicking a note
+moves the caret into StickyDock, and closing that note hands the keyboard back.
+
+**Only the pill is hot.** The window behind the resting pill is taller than the
+pill, so that opening the deck does not make it jump about, but the pointer has
+to be on the pill itself before anything happens. Empty space above and below it
+is not a trigger.
 
 **Desktop notes float above other windows.** This is a deliberate difference from
 Apple's Stickies, which sit at normal window level and get buried. The dock

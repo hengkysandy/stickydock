@@ -12,14 +12,29 @@ final class HoverReportingView: NSView {
     var onEnter: () -> Void = {}
     var onExit: () -> Void = {}
 
+    /// The part of this view that should react to the pointer.
+    ///
+    /// The window is a constant height so that opening the deck does not make it
+    /// jump vertically. That left a 14 by 470 point strip down the screen edge
+    /// which all reacted to the pointer, including the large empty parts above
+    /// and below the little pill, so the deck kept opening when the pointer was
+    /// nowhere near it. Only the pill is hot now.
+    var hotRect: () -> NSRect = { .zero }
+
+    func refreshHotZone() {
+        updateTrackingAreas()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
+        let rect = hotRect()
+        guard rect.width > 0, rect.height > 0 else { return }
         addTrackingArea(NSTrackingArea(
-            rect: .zero,
+            rect: rect,
             // .activeAlways matters: the panel must react even when StickyDock
             // is not the active app, which is nearly always.
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .activeAlways],
             owner: self
         ))
     }
@@ -65,6 +80,17 @@ final class DockPanel: NSPanel {
         let container = HoverReportingView()
         container.onEnter = { [weak self] in self?.expand() }
         container.onExit = { [weak self] in self?.scheduleCollapse() }
+        container.hotRect = { [weak self, weak container] in
+            guard let self, let container else { return .zero }
+            // Open: the whole panel, so moving around inside it does not close
+            // the deck. Resting: only the pill.
+            guard !self.state.isExpanded else { return container.bounds }
+            let pill = Theme.stripeHeight(noteCount: self.state.notes.count)
+            return NSRect(
+                x: 0, y: (container.bounds.height - pill) / 2,
+                width: container.bounds.width, height: pill
+            )
+        }
         container.addSubview(host)
         NSLayoutConstraint.activate([
             host.topAnchor.constraint(equalTo: container.topAnchor),
@@ -73,12 +99,16 @@ final class DockPanel: NSPanel {
             host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
         contentView = container
+        hoverContainer = container
     }
 
-    /// Asks for key status on hover. It is often refused, because the app is not
-    /// frontmost, which is why `FirstMouseHostingView` exists.
-    private func claimKeyWindow() {
-        makeKeyAndOrderFront(nil)
+    private weak var hoverContainer: HoverReportingView?
+
+    /// The hot zone follows the pill, so it has to be recomputed when the deck
+    /// opens or closes and when the number of notes changes. Neither of those
+    /// resizes the window any more, so AppKit will not do it unprompted.
+    func refreshHotZone() {
+        hoverContainer?.refreshHotZone()
     }
 
     override var canBecomeKey: Bool { true }
@@ -124,8 +154,11 @@ final class DockPanel: NSPanel {
             }
         }
 
+        // The true right edge of the display, not the visible frame's, and no
+        // gap. Anything less and slamming the pointer into the edge lands in a
+        // dead strip a couple of points wide and nothing happens.
         let frame = NSRect(
-            x: visible.maxX - width - 2,
+            x: screen.frame.maxX - width,
             y: visible.midY - height / 2,
             width: width,
             height: height
@@ -144,21 +177,21 @@ final class DockPanel: NSPanel {
 
     // MARK: - Hover
 
+    /// Opens the deck. **Deliberately takes no focus of any kind.**
+    ///
+    /// This used to call `makeKeyAndOrderFront` so SwiftUI would run its gestures
+    /// here. That was a workaround for clicks being swallowed, which
+    /// `FirstMouseHostingView` now fixes at the root, and it had a cost nobody
+    /// should pay: reaching towards the screen edge took the keyboard away from
+    /// whatever you were typing in. Hovering is not a decision. It must never
+    /// interrupt the app in front.
     func expand() {
         collapseWork?.cancel()
         collapseWork = nil
-        claimKeyWindow()
         guard !state.isExpanded else { return }
         state.isExpanded = true
         layoutForCurrentState()
-        // Become key on hover, but never activate the app. SwiftUI will not run a
-        // drag gesture in a window that is not key, so without this a note cannot
-        // be dragged out of the deck at all. Doing it here rather than on
-        // mouse-down matters: making a window key in the middle of dispatching a
-        // mouse-down swallows that event, the gesture never starts, and every
-        // drag that follows is ignored. A key panel in an inactive app still
-        // receives no keystrokes, so nothing is stolen from the app in front.
-        makeKeyAndOrderFront(nil)
+        refreshHotZone()
     }
 
     /// A short grace period, so nudging the pointer a few pixels past the edge
@@ -180,6 +213,7 @@ final class DockPanel: NSPanel {
             self.state.hoveredNoteId = nil
             self.state.isExpanded = false
             self.layoutForCurrentState()
+            self.refreshHotZone()
         }
         collapseWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
