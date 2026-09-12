@@ -105,6 +105,13 @@ extension StickyNoteWindow: NSWindowDelegate {
     }
 
     nonisolated func windowDidResize(_ notification: Notification) {
-        MainActor.assumeIsolated { saveFrame() }
+        MainActor.assumeIsolated {
+            saveFrame()
+            // This window is transparent with a rounded corner mask, so macOS
+            // builds its shadow from the alpha mask and caches it. Resizing
+            // changes that shape, and a cached shadow from the old size draws as
+            // a hard outline that no longer fits the note.
+            invalidateShadow()
+        }
     }
 }

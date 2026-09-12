@@ -67,7 +67,15 @@ final class DockPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
         backgroundColor = .clear
         isOpaque = false
-        hasShadow = true
+        // No window shadow. This window is transparent and changes shape
+        // constantly, from a thin stripe to tabs to tabs plus a peek to tabs plus
+        // the editor. macOS builds a window shadow from the alpha mask and then
+        // caches it, so without an `invalidateShadow()` after every one of those
+        // changes it draws a shadow belonging to a shape the window no longer
+        // has. That is what put a hard dark outline around the peek. The tabs,
+        // the peek and the resting dots each draw their own shadow, so the window
+        // does not need one and cannot get it stale.
+        hasShadow = false
         hidesOnDeactivate = false
         isMovable = false
         animationBehavior = .none
