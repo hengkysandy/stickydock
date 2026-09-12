@@ -11,7 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: SyncCoordinator?
     private var allNotes: AllNotesWindow?
     private var stickyWindows: StickyWindowManager?
-    private var hotKey: HotKey?
+    private var hotKeys: HotKeyCenter?
+    private var shortcutsWindow: ShortcutsWindow?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -66,10 +67,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stickyWindows = windows
         windows.restoreAll()
 
+        let center = HotKeyCenter { [weak self] action in self?.run(action) }
+        hotKeys = center
+        shortcutsWindow = ShortcutsWindow { center.reload() }
+
         EditMenu.install()
         setUpSync(state: state, store: store)
         setUpStatusItem()
-        setUpHotKey()
+        center.reload()
 
         allNotes = AllNotesWindow(state: state) { [weak self] note in
             // A note that is out on the desktop is not in the dock's list, so
@@ -88,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // drop the last thing typed.
         state?.flushPendingEdit()
         coordinator?.stop()
-        hotKey?.unregister()
+        hotKeys?.stop()
         stickyWindows?.closeAll()
     }
 
@@ -122,20 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.start()
     }
 
-    private func setUpHotKey() {
-        guard Preferences.hotKeyEnabled else { return }
-        // Control + Option + N. Carbon, so no Accessibility permission is needed.
-        hotKey = HotKey(
-            keyCode: UInt32(kVK_ANSI_N),
-            modifiers: UInt32(controlKey | optionKey)
-        ) { [weak self] in
-            self?.newNote()
-        }
-        if hotKey == nil {
-            NSLog("StickyDock: could not register ⌃⌥N, something else has it.")
-        }
-    }
-
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(
@@ -149,9 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        let new = NSMenuItem(title: "New Note", action: #selector(newNote), keyEquivalent: "n")
-        new.keyEquivalentModifierMask = [.control, .option]
+        // No keyEquivalent here: the shortcut is a global hot key, and letting
+        // the menu claim it too would register the same combination twice.
+        let new = NSMenuItem(title: "New Note", action: #selector(newNote), keyEquivalent: "")
         new.target = self
+        new.tag = Self.newNoteTag
         menu.addItem(new)
 
         let all = NSMenuItem(title: "All Notes…", action: #selector(showAllNotes), keyEquivalent: "")
@@ -198,10 +191,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
+    private static let newNoteTag = 990
     private static let statusLineTag = 991
     private static let desktopNotesTag = 992
     private enum Toggle: Int {
         case openAtLogin = 801, hotKey = 802, pauseSync = 803, hideDock = 804
+        case notesOnTop = 805
     }
 
     /// Settings live in a submenu rather than at the top level, so the things
@@ -212,9 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let entries: [(String, Toggle, Selector)] = [
             ("Open at Login", .openAtLogin, #selector(toggleOpenAtLogin)),
-            ("New Note Shortcut  ⌃⌥N", .hotKey, #selector(toggleHotKey)),
+            ("New Note Shortcut", .hotKey, #selector(toggleHotKey)),
             ("Pause Syncing", .pauseSync, #selector(togglePauseSync)),
             ("Hide Dock", .hideDock, #selector(toggleHideDock)),
+            ("Keep Desktop Notes on Top", .notesOnTop, #selector(toggleNotesOnTop)),
         ]
         for (title, tag, action) in entries {
             if tag == .pauseSync { menu.addItem(.separator()) }
@@ -225,6 +221,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        let shortcuts = NSMenuItem(
+            title: "Keyboard Shortcuts…", action: #selector(showShortcuts), keyEquivalent: ""
+        )
+        shortcuts.target = self
+        menu.addItem(shortcuts)
+
         let reveal = NSMenuItem(
             title: "Reveal Database in Finder", action: #selector(revealDatabase), keyEquivalent: ""
         )
@@ -300,14 +302,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleHotKey() {
         Preferences.hotKeyEnabled.toggle()
-        hotKey?.unregister()
-        hotKey = nil
-        setUpHotKey()
+        hotKeys?.reload()
+    }
+
+    @objc private func showShortcuts() {
+        shortcutsWindow?.show()
+    }
+
+    /// One place every shortcut lands, so a key press and a menu click do exactly
+    /// the same thing.
+    private func run(_ action: ShortcutAction) {
+        switch action {
+        case .newNote:          newNote()
+        case .toggleNotesOnTop: toggleNotesOnTop()
+        case .toggleDock:       toggleHideDock()
+        case .togglePauseSync:  togglePauseSync()
+        }
     }
 
     @objc private func togglePauseSync() {
         Preferences.syncPaused.toggle()
         coordinator?.pauseChanged()
+    }
+
+    @objc private func toggleNotesOnTop() {
+        Preferences.notesOnTop.toggle()
+        stickyWindows?.applyStackingLevel()
     }
 
     @objc private func toggleHideDock() {
@@ -349,6 +369,10 @@ extension AppDelegate: NSMenuDelegate {
             guard let state, let items = statusItem?.menu?.items else { return }
             items.first { $0.tag == Self.statusLineTag }?
                 .title = state.syncProblem ?? state.lastSyncSummary
+            if let newNote = items.first(where: { $0.tag == Self.newNoteTag }) {
+                let combo = Preferences.hotKeyEnabled ? Preferences.shortcut(for: .newNote) : nil
+                newNote.title = "New Note" + (combo.map { "   \($0.display)" } ?? "")
+            }
             if let settings = items.first(where: { $0.submenu?.title == "Settings" })?.submenu {
                 for entry in settings.items {
                     switch Toggle(rawValue: entry.tag) {
@@ -359,9 +383,13 @@ extension AppDelegate: NSMenuDelegate {
                         entry.title = LoginItem.deniedByUser
                             ? "Open at Login  (blocked in System Settings)"
                             : "Open at Login"
-                    case .hotKey:   entry.state = Preferences.hotKeyEnabled ? .on : .off
+                    case .hotKey:
+                        entry.state = Preferences.hotKeyEnabled ? .on : .off
+                        let combo = Preferences.shortcut(for: .newNote)
+                        entry.title = "New Note Shortcut" + (combo.map { "  \($0.display)" } ?? "")
                     case .pauseSync: entry.state = Preferences.syncPaused ? .on : .off
                     case .hideDock:  entry.state = Preferences.dockHidden ? .on : .off
+                    case .notesOnTop: entry.state = Preferences.notesOnTop ? .on : .off
                     case .none:      break
                     }
                 }

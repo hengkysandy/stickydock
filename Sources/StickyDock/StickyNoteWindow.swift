@@ -4,10 +4,14 @@ import StickyDockCore
 
 /// One note, in its own window on the desktop.
 ///
-/// Level is `.floating`, unlike Apple's Stickies, which sit at normal level and
-/// get buried. That is a deliberate difference: the dock already covers the
-/// "keep it out of my way" case, so dragging a note out is an explicit request
-/// to keep it in front. One click puts it back.
+/// Sits at normal window level by default, so it goes behind whatever you are
+/// working in, the way Apple's Stickies do.
+///
+/// It used to float above everything, on the reasoning that dragging a note out
+/// of the dock meant "keep this in front". That was wrong in practice: a note
+/// pinned over the window you are typing in is not a note you are reading, it is
+/// one you are trying to see past. Turn it back on per taste with
+/// Settings, Keep Desktop Notes on Top.
 @MainActor
 final class StickyNoteWindow: NSPanel {
     let noteId: String
@@ -26,8 +30,6 @@ final class StickyNoteWindow: NSPanel {
             defer: false
         )
 
-        isFloatingPanel = true
-        level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         backgroundColor = .clear
         isOpaque = false
@@ -35,6 +37,7 @@ final class StickyNoteWindow: NSPanel {
         hidesOnDeactivate = false
         isMovableByWindowBackground = true
         animationBehavior = .none
+        applyStackingLevel()
         minSize = NSSize(
             width: DetachedFrame.minimumSize.width,
             height: DetachedFrame.minimumSize.height
@@ -53,6 +56,16 @@ final class StickyNoteWindow: NSPanel {
         host.layer?.masksToBounds = true
         contentView = host
         delegate = self
+    }
+
+    /// Above everything, or in the ordinary pile with every other window.
+    ///
+    /// `isFloatingPanel` has to move with the level. Left at true, an NSPanel
+    /// keeps floating no matter what `level` says.
+    func applyStackingLevel() {
+        let onTop = Preferences.notesOnTop
+        isFloatingPanel = onTop
+        level = onTop ? .floating : .normal
     }
 
     override var canBecomeKey: Bool { true }

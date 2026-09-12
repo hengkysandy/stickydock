@@ -235,6 +235,7 @@ what it makes. It never touches your real StickyDock folder.
 | Put it back | The `⇥` button in the note's top left corner |
 | Find a buried desktop note | Menu bar › Bring Desktop Notes to Front |
 | Settings | Menu bar › Settings |
+| Change a shortcut | Menu bar › Settings › Keyboard Shortcuts… |
 | New note | `⌃⌥N` from anywhere, or the `+` in the deck, or the menu bar |
 | Close the editor | The `‹` in the corner |
 | Search everything | Menu bar › All Notes… |
@@ -247,6 +248,11 @@ careful: the characters come from the Notes `plaintext` property, which is alway
 right, and only the tag positions come from the HTML body, which corrupts
 entities. If the two disagree, the formatting is dropped rather than guessed at,
 because putting bold on the wrong words is worse than losing it.
+
+**Desktop notes sit behind your active window.** They stay on the desktop where
+you left them, but they do not cover what you are working in. If one gets buried,
+Menu bar › Bring Desktop Notes to Front pulls them all out. Prefer them pinned on
+top? Settings › Keep Desktop Notes on Top.
 
 **Reaching for the deck never takes your keyboard.** Hovering opens it and
 nothing else: whatever you were typing in keeps the focus. Only clicking a note
@@ -314,6 +320,8 @@ In the menu bar, under **Settings**:
 | **New Note Shortcut ⌃⌥N** | Turns the global shortcut off, for when it clashes with something else. Takes effect at once, no relaunch. |
 | **Pause Syncing** | Stops talking to Apple Notes. Your edits keep saving locally the whole time; they go out when you switch it back on. |
 | **Hide Dock** | Hides the edge dock. The menu bar item stays, so there is always a way back. |
+| **Keep Desktop Notes on Top** | Off by default. Desktop notes normally sit behind whatever you are working in, like Apple's Stickies. Turn this on to pin them above everything. |
+| **Keyboard Shortcuts…** | Set your own shortcut for any of four actions. |
 | **Reveal Database in Finder** | Opens the folder holding the local cache. |
 
 **Open at Login needs the app to be in Applications.** macOS will not add a login
@@ -322,6 +330,26 @@ refuses, StickyDock says so and tells you why rather than failing quietly.
 
 Under **About StickyDock**: the version, a link to the Releases page, and a link
 to the source.
+
+### Keyboard shortcuts
+
+Settings › Keyboard Shortcuts… Click a shortcut, press the keys you want,
+**Delete** clears it and **Escape** leaves it alone. Four actions can be bound:
+
+| Action | Default |
+|---|---|
+| New Note | ⌃⌥N |
+| Keep Desktop Notes on Top | none |
+| Hide or Show the Dock | none |
+| Pause or Resume Syncing | none |
+
+Only New Note ships with a shortcut. Claiming four combinations out of the box
+would take keys away from you that you never offered.
+
+A shortcut must include at least one modifier, or it would fire every time you
+typed that letter anywhere on the machine. If another app already owns the
+combination, macOS refuses it and StickyDock writes a line to the log rather than
+pretending it worked.
 
 ### Settings with no menu item yet
 

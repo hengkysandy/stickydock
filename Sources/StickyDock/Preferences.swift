@@ -15,6 +15,7 @@ struct Preferences {
         static let hotKeyEnabled = "hotKeyEnabled"
         static let syncPaused = "syncPaused"
         static let dockHidden = "dockHidden"
+        static let notesOnTop = "notesOnTop"
     }
 
     /// The Notes account to mirror into. iCloud is the one that reaches the phone.
@@ -47,6 +48,45 @@ struct Preferences {
     static var dockHidden: Bool {
         get { defaults.bool(forKey: Key.dockHidden) }
         set { defaults.set(newValue, forKey: Key.dockHidden) }
+    }
+
+    /// Whether desktop notes sit above every other window.
+    ///
+    /// Off by default. It was on originally, on the reasoning that dragging a
+    /// note out meant "keep this in front", and that turned out to be wrong:
+    /// a note pinned over the window you are working in is not a note you are
+    /// reading, it is one you are trying to see past.
+    static var notesOnTop: Bool {
+        get { defaults.bool(forKey: Key.notesOnTop) }
+        set { defaults.set(newValue, forKey: Key.notesOnTop) }
+    }
+
+    // MARK: - Shortcuts
+
+    /// The shortcut bound to an action, or nil for none.
+    ///
+    /// "Never set" and "deliberately cleared" are different states, so a cleared
+    /// shortcut is stored as an explicit empty marker rather than by removing
+    /// the key. Otherwise clearing New Note would silently hand back its factory
+    /// default on the next launch.
+    static func shortcut(for action: ShortcutAction) -> KeyCombo? {
+        let key = "shortcut.\(action.rawValue)"
+        guard let raw = defaults.string(forKey: key) else { return action.factoryDefault }
+        guard raw != "none", let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(KeyCombo.self, from: data)
+    }
+
+    static func setShortcut(_ combo: KeyCombo?, for action: ShortcutAction) {
+        let key = "shortcut.\(action.rawValue)"
+        guard let combo, let data = try? JSONEncoder().encode(combo) else {
+            defaults.set("none", forKey: key)
+            return
+        }
+        defaults.set(String(decoding: data, as: UTF8.self), forKey: key)
+    }
+
+    static func resetShortcut(for action: ShortcutAction) {
+        defaults.removeObject(forKey: "shortcut.\(action.rawValue)")
     }
 
     /// Where the local cache lives. Application Support, not iCloud: it is a

@@ -153,11 +153,25 @@ final class StickyWindowManager {
         for id in Array(windows.keys) { close(noteId: id) }
     }
 
+    /// Surfaces every desktop note above whatever is covering it.
+    ///
+    /// `orderFront` alone is not enough once notes sit at normal window level:
+    /// it only reorders them within this app, and this app is almost never the
+    /// active one, so a note buried under the window you are working in stayed
+    /// buried. Since notes no longer float, this menu item is the only way back
+    /// to a covered note, so it has to actually work.
     func bringAllToFront() {
-        for window in windows.values { window.orderFront(nil) }
+        NSApp.activate(ignoringOtherApps: true)
+        for window in windows.values { window.orderFrontRegardless() }
     }
 
     func isOpen(noteId: String) -> Bool { windows[noteId] != nil }
+
+    /// Applies the on-top setting to notes that are already on screen, so the
+    /// menu item takes effect without reopening anything.
+    func applyStackingLevel() {
+        for window in windows.values { window.applyStackingLevel() }
+    }
 
     /// Brings one desktop note forward and gives it focus.
     func focus(noteId: String) {
