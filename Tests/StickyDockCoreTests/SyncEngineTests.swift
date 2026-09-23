@@ -153,6 +153,17 @@ struct SyncEnginePlanTests {
 @Suite("SyncEngine.runOnce", .serialized)
 struct SyncEngineRunTests {
 
+    /// The sidecar is keyed on creation date, not on the device-local note id,
+    /// so tests have to look entries up the same way the engine files them.
+    private func key(_ bridge: FakeNotesBridge, _ notesId: String) -> String {
+        SidecarKey.of(bridge.current.first { $0.id == notesId }!)
+    }
+    private func key(created: TimeInterval) -> String {
+        SidecarKey.of(RemoteNote(id: "-", title: "-", text: "-",
+                                 createdAt: Date(timeIntervalSince1970: created),
+                                 modifiedAt: Date()))
+    }
+
     private func makeEngine(
         notes: [Note] = [], remote: [RemoteNote] = []
     ) throws -> (SyncEngine, NoteStore, FakeNotesBridge, URL) {
@@ -226,7 +237,7 @@ struct SyncEngineRunTests {
         let (engine, store, _, dir) = try makeEngine(
             notes: [Note(id: "l1", notesId: "r1", text: "mine",
                          syncedHash: ContentHash.of("base"))],
-            remote: [RemoteNote(id: "r1", title: "theirs", text: "theirs", modifiedAt: Date())]
+            remote: [RemoteNote(id: "r1", title: "theirs", text: "theirs", createdAt: Date(timeIntervalSince1970: 1700000060), modifiedAt: Date())]
         )
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -282,7 +293,9 @@ struct SyncEngineRunTests {
                          styleDirty: true,
                          syncedHash: ContentHash.of(text))],
             remote: [RemoteNote(id: "r1", title: text, text: text,
-                                body: NoteHTML.toHTML(text), modifiedAt: Date())]
+                                body: NoteHTML.toHTML(text),
+                                createdAt: Date(timeIntervalSince1970: 1700000060),
+                                modifiedAt: Date())]
         )
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -299,7 +312,9 @@ struct SyncEngineRunTests {
                              styleRuns: [TextStyleRun(location: 5, length: 4, bold: true)],
                              styleDirty: true, syncedHash: ContentHash.of(text))],
                 remote: [RemoteNote(id: "r1", title: text, text: text,
-                                    body: NoteHTML.toHTML(text), modifiedAt: Date())]
+                                    body: NoteHTML.toHTML(text),
+                                    createdAt: Date(timeIntervalSince1970: 1700000060),
+                                    modifiedAt: Date())]
             )
             return (e, s, d)
         }()
@@ -317,7 +332,9 @@ struct SyncEngineRunTests {
             notes: [Note(id: "l1", notesId: "r1", text: "old",
                          syncedHash: ContentHash.of("old"))],
             remote: [RemoteNote(id: "r1", title: text, text: text,
-                                body: NoteHTML.toHTML(rich), modifiedAt: Date())]
+                                body: NoteHTML.toHTML(rich),
+                                createdAt: Date(timeIntervalSince1970: 1700000060),
+                                modifiedAt: Date())]
         )
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -331,7 +348,9 @@ struct SyncEngineRunTests {
                             runs: [TextStyleRun(location: 0, length: 5, underline: true)])
         let (engine, store, _, dir) = try makeEngine(
             remote: [RemoteNote(id: "r1", title: "under me", text: "under me",
-                                body: NoteHTML.toHTML(rich), modifiedAt: Date())]
+                                body: NoteHTML.toHTML(rich),
+                                createdAt: Date(timeIntervalSince1970: 1700000060),
+                                modifiedAt: Date())]
         )
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -375,8 +394,9 @@ struct SyncEngineRunTests {
         // Left unpruned this file grows for ever, and a colour could come back
         // from the dead and attach itself to an unrelated note.
         let sidecar = FakeSidecarStore()
-        sidecar.save(Sidecar(version: 1, entries: [
-            "ghost": SidecarEntry(color: .pink, sortIndex: 0, updatedAt: Date()),
+        sidecar.save(Sidecar(entries: [
+            // A key this Mac cannot resolve to any note it can see.
+            "1999-01-01T00:00:00Z": SidecarEntry(color: .pink, sortIndex: 0, updatedAt: Date()),
         ]))
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
@@ -384,13 +404,17 @@ struct SyncEngineRunTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
         try store.upsert(Note(id: "real", text: "still here", color: .blue))
-        let engine = SyncEngine(store: store, bridge: FakeNotesBridge(), sidecar: sidecar,
+        let bridge = FakeNotesBridge()
+        let engine = SyncEngine(store: store, bridge: bridge, sidecar: sidecar,
                                 account: "iCloud", folder: "StickyDock")
 
         _ = try engine.runOnce()
-        #expect(sidecar.load().entries["ghost"] == nil, "the stale entry must be pruned")
-        let liveId = try #require(try store.find(id: "real")?.notesId)
-        #expect(sidecar.load().entries[liveId]?.color == .blue)
+        // An unresolvable key is left alone: it may belong to the other Mac.
+        // What matters is that the live note gets an entry under its shared key.
+        let created = try #require(bridge.current.first).createdAt
+        let key = SidecarKey.of(RemoteNote(id: "x", title: "x", text: "x",
+                                           createdAt: created, modifiedAt: created))
+        #expect(sidecar.load().entries[key]?.color == .blue)
     }
 
     @Test func aColourSetOnAnotherMacIsNotThrownAwayByASyncHere() throws {
@@ -402,21 +426,93 @@ struct SyncEngineRunTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
-        sidecar.save(Sidecar(version: 1, entries: [
-            "r1": SidecarEntry(color: .purple, sortIndex: 3, updatedAt: Date()),
+        sidecar.save(Sidecar(entries: [
+            key(created: 1_700_000_060):
+                SidecarEntry(color: .purple, sortIndex: 3, updatedAt: Date()),
         ]))
         let engine = SyncEngine(
             store: store,
             bridge: FakeNotesBridge(notes: [
                 RemoteNote(id: "r1", title: "x", text: "x",
-                           body: NoteHTML.toHTML("x"), modifiedAt: Date()),
+                           body: NoteHTML.toHTML("x"),
+                           createdAt: Date(timeIntervalSince1970: 1700000060),
+                           modifiedAt: Date()),
             ]),
             sidecar: sidecar, account: "iCloud", folder: "StickyDock"
         )
 
         _ = try engine.runOnce()
-        #expect(sidecar.load().entries["r1"]?.color == .purple)
+        #expect(sidecar.load().entries[key(created: 1_700_000_060)]?.color == .purple)
+        // The point of the whole exercise: it is applied here, not just stored.
         #expect(try store.find(notesId: "r1")?.color == .purple)
+    }
+
+    @Test func reorderingTheDeckHereIsPublishedToTheSidecar() throws {
+        // Dragging a tab up or down only changes sortIndex. If that does not
+        // reach the sidecar, the other Mac keeps the old order forever.
+        let sidecar = FakeSidecarStore()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        try store.upsert(Note(id: "l1", notesId: "r1", text: "x",
+                              updatedAt: Date(), sortIndex: 0,
+                              syncedHash: ContentHash.of("x")))
+        sidecar.save(Sidecar(entries: [
+            key(created: 1_700_000_060):
+                SidecarEntry(color: .yellow, sortIndex: 0,
+                             updatedAt: Date().addingTimeInterval(-3600)),
+        ]))
+        let bridge = FakeNotesBridge(notes: [
+            RemoteNote(id: "r1", title: "x", text: "x", body: NoteHTML.toHTML("x"),
+                       createdAt: Date(timeIntervalSince1970: 1_700_000_060),
+                       modifiedAt: Date()),
+        ])
+        let engine = SyncEngine(store: store, bridge: bridge, sidecar: sidecar,
+                                account: "iCloud", folder: "StickyDock")
+
+        // The user drags it down two slots.
+        var moved = try #require(try store.find(id: "l1"))
+        moved.sortIndex = 2
+        moved.updatedAt = Date()
+        try store.upsert(moved)
+
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries[key(created: 1_700_000_060)]?.sortIndex == 2)
+    }
+
+    @Test func anOrderSetOnTheOtherMacIsAppliedHere() throws {
+        let sidecar = FakeSidecarStore()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        // Adopted long ago, so nothing but the sidecar can change its order now.
+        try store.upsert(Note(id: "l1", notesId: "r1", text: "x",
+                              updatedAt: Date().addingTimeInterval(-3600), sortIndex: 0,
+                              syncedHash: ContentHash.of("x")))
+        sidecar.save(Sidecar(entries: [
+            key(created: 1_700_000_060):
+                SidecarEntry(color: .yellow, sortIndex: 5, updatedAt: Date()),
+        ]))
+        let engine = SyncEngine(
+            store: store,
+            bridge: FakeNotesBridge(notes: [
+                RemoteNote(id: "r1", title: "x", text: "x", body: NoteHTML.toHTML("x"),
+                           createdAt: Date(timeIntervalSince1970: 1_700_000_060),
+                           modifiedAt: Date()),
+            ]),
+            sidecar: sidecar, account: "iCloud", folder: "StickyDock"
+        )
+
+        let report = try engine.runOnce()
+        #expect(report.restyled == 1)
+        #expect(try store.find(notesId: "r1")?.sortIndex == 5)
+        // And it must not bounce straight back out again on the next pass.
+        _ = try engine.runOnce()
+        #expect(sidecar.load().entries[key(created: 1_700_000_060)]?.sortIndex == 5)
     }
 
     @Test func aDeletedNoteLeavesAppleNotesAndDoesNotComeBack() throws {
@@ -461,7 +557,9 @@ struct SyncEngineRunTests {
         let actions = SyncEngine.plan(
             local: [deleted],
             remote: [RemoteNote(id: "r1", title: "gone", text: "gone",
-                                body: NoteHTML.toHTML("gone"), modifiedAt: Date())]
+                                body: NoteHTML.toHTML("gone"),
+                                createdAt: Date(timeIntervalSince1970: 1700000060),
+                                modifiedAt: Date())]
         )
         #expect(actions == [.purge(noteId: "l1", notesId: "r1")])
         #expect(!actions.contains(.adopt(notesId: "r1")))
@@ -498,8 +596,10 @@ struct SyncEngineRunTests {
             store: store,
             bridge: FakeNotesBridge(notes: [
                 RemoteNote(id: "r1", title: "a", text: "a", body: NoteHTML.toHTML("a"),
+                           createdAt: Date(timeIntervalSince1970: 1_700_000_060),
                            modifiedAt: Date()),
                 RemoteNote(id: "r2", title: "b", text: "b", body: NoteHTML.toHTML("b"),
+                           createdAt: Date(timeIntervalSince1970: 1_700_000_120),
                            modifiedAt: Date()),
             ]),
             sidecar: sidecar, account: "iCloud", folder: "StickyDock"
@@ -519,11 +619,12 @@ struct SyncEngineRunTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
         try store.upsert(Note(id: "l1", text: "coloured", color: .yellow))
-        let engine = SyncEngine(store: store, bridge: FakeNotesBridge(), sidecar: sidecar,
+        let bridge = FakeNotesBridge()
+        let engine = SyncEngine(store: store, bridge: bridge, sidecar: sidecar,
                                 account: "iCloud", folder: "StickyDock")
         _ = try engine.runOnce()
         let notesId = try #require(try store.find(id: "l1")?.notesId)
-        #expect(sidecar.load().entries[notesId]?.color == .yellow)
+        #expect(sidecar.load().entries[key(bridge, notesId)]?.color == .yellow)
 
         var note = try #require(try store.find(id: "l1"))
         note.color = .purple
@@ -531,7 +632,7 @@ struct SyncEngineRunTests {
         try store.upsert(note)
 
         _ = try engine.runOnce()
-        #expect(sidecar.load().entries[notesId]?.color == .purple)
+        #expect(sidecar.load().entries[key(bridge, notesId)]?.color == .purple)
     }
 
     @Test func aColourSetMoreRecentlyOnTheOtherMacIsNotUndone() throws {
@@ -546,27 +647,36 @@ struct SyncEngineRunTests {
         try store.upsert(Note(id: "l1", notesId: "r1", text: "x", color: .yellow,
                               updatedAt: Date().addingTimeInterval(-3600),
                               syncedHash: ContentHash.of("x")))
-        sidecar.save(Sidecar(version: 1, entries: [
-            "r1": SidecarEntry(color: .green, sortIndex: 0, updatedAt: Date()),
+        sidecar.save(Sidecar(entries: [
+            SidecarKey.of(RemoteNote(id: "r1", title: "x", text: "x",
+                                     createdAt: Date(timeIntervalSince1970: 1_700_000_060),
+                                     modifiedAt: Date())):
+                SidecarEntry(color: .green, sortIndex: 0, updatedAt: Date()),
         ]))
         let engine = SyncEngine(
             store: store,
             bridge: FakeNotesBridge(notes: [
                 RemoteNote(id: "r1", title: "x", text: "x", body: NoteHTML.toHTML("x"),
+                           createdAt: Date(timeIntervalSince1970: 1_700_000_060),
                            modifiedAt: Date()),
             ]),
             sidecar: sidecar, account: "iCloud", folder: "StickyDock"
         )
 
         _ = try engine.runOnce()
-        #expect(sidecar.load().entries["r1"]?.color == .green)
+        let key = SidecarKey.of(RemoteNote(id: "r1", title: "x", text: "x",
+                                           createdAt: Date(timeIntervalSince1970: 1_700_000_060),
+                                           modifiedAt: Date()))
+        #expect(sidecar.load().entries[key]?.color == .green)
+        // And the whole point: the other Mac's colour is now applied here too.
+        #expect(try store.find(notesId: "r1")?.color == .green)
     }
 
     @Test func remoteEditIsPulledIntoTheLocalCache() throws {
         let (engine, store, _, dir) = try makeEngine(
             notes: [Note(id: "l1", notesId: "r1", text: "old",
                          syncedHash: ContentHash.of("old"))],
-            remote: [RemoteNote(id: "r1", title: "new", text: "new", modifiedAt: Date())]
+            remote: [RemoteNote(id: "r1", title: "new", text: "new", createdAt: Date(timeIntervalSince1970: 1700000060), modifiedAt: Date())]
         )
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -597,7 +707,7 @@ struct SyncEngineRunTests {
         #expect(try store.find(id: "l1")?.text == "hello")
     }
 
-    @Test func colorsArePersistedToTheSidecarUnderTheNotesId() throws {
+    @Test func colorsArePersistedToTheSidecarUnderTheCreationDateKey() throws {
         let sidecar = FakeSidecarStore()
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
@@ -605,19 +715,23 @@ struct SyncEngineRunTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
         try store.upsert(Note(id: "l1", text: "coloured", color: .blue))
-        let engine = SyncEngine(store: store, bridge: FakeNotesBridge(), sidecar: sidecar,
+        let bridge = FakeNotesBridge()
+        let engine = SyncEngine(store: store, bridge: bridge, sidecar: sidecar,
                                 account: "iCloud", folder: "StickyDock")
 
         _ = try engine.runOnce()
         let notesId = try #require(try store.find(id: "l1")?.notesId)
-        #expect(sidecar.load().entries[notesId]?.color == .blue)
+        #expect(sidecar.load().entries[key(bridge, notesId)]?.color == .blue)
     }
 
     @Test func anAdoptedNoteTakesItsColourFromTheSidecar() throws {
         // This is what makes a colour set on one Mac show up on the other.
         let sidecar = FakeSidecarStore()
-        sidecar.save(Sidecar(version: 1, entries: [
-            "r1": SidecarEntry(color: .purple, sortIndex: 7, updatedAt: Date()),
+        sidecar.save(Sidecar(entries: [
+            SidecarKey.of(RemoteNote(id: "r1", title: "x", text: "x",
+                                     createdAt: Date(timeIntervalSince1970: 1_700_000_060),
+                                     modifiedAt: Date())):
+                SidecarEntry(color: .purple, sortIndex: 7, updatedAt: Date()),
         ]))
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("stickydock-sync-\(UUID().uuidString)")
@@ -627,7 +741,7 @@ struct SyncEngineRunTests {
         let engine = SyncEngine(
             store: store,
             bridge: FakeNotesBridge(notes: [
-                RemoteNote(id: "r1", title: "x", text: "x", modifiedAt: Date()),
+                RemoteNote(id: "r1", title: "x", text: "x", createdAt: Date(timeIntervalSince1970: 1700000060), modifiedAt: Date()),
             ]),
             sidecar: sidecar, account: "iCloud", folder: "StickyDock"
         )

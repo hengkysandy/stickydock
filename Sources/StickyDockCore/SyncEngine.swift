@@ -36,6 +36,8 @@ public struct SyncReport: Equatable, Sendable {
     public var archived = 0
     public var deletedRemotely = 0
     public var restored = 0
+    /// Colour or order taken from the other Mac.
+    public var restyled = 0
 
     public init() {}
 
@@ -48,6 +50,7 @@ public struct SyncReport: Equatable, Sendable {
         if pulled > 0   { parts.append("\(pulled) received") }
         if adopted > 0  { parts.append("\(adopted) picked up") }
         if restored > 0 { parts.append("\(restored) restored") }
+        if restyled > 0 { parts.append("\(restyled) restyled") }
         if archived > 0 { parts.append("\(archived) archived") }
         if deletedRemotely > 0 { parts.append("\(deletedRemotely) removed") }
         if conflicts > 0 { parts.append("\(conflicts) conflict\(conflicts == 1 ? "" : "s")") }
@@ -186,7 +189,10 @@ public final class SyncEngine: @unchecked Sendable {
         try bridge.ensureFolder(account: account, folder: folder)
         let remote = try bridge.list(account: account, folder: folder)
         let local = try store.all()
-        var sheet = SidecarStore.merge(sidecar.load(), Sidecar.empty)
+        var sheet = SidecarStore.merge(sidecar.load(), Sidecar.empty).migrated()
+        // One name per note that means the same thing on every Mac. Notes made
+        // in the same second are left out; see SidecarKey.
+        let keyFor = SidecarKey.map(for: remote)
         var report = SyncReport()
 
         for action in Self.plan(local: local, remote: remote) {
@@ -203,9 +209,11 @@ public final class SyncEngine: @unchecked Sendable {
                 note.syncedHash = ContentHash.of(created.text)
                 note.styleDirty = false
                 try store.upsert(note)
-                sheet.entries[created.id] = SidecarEntry(
-                    color: note.color, sortIndex: note.sortIndex, updatedAt: Date()
-                )
+                if let key = SidecarKey.of(created) as String? {
+                    sheet.entries[key] = SidecarEntry(
+                        color: note.color, sortIndex: note.sortIndex, updatedAt: Date()
+                    )
+                }
                 report.created += 1
 
             case .push(let noteId):
@@ -216,9 +224,11 @@ public final class SyncEngine: @unchecked Sendable {
                 note.syncedHash = ContentHash.of(updated.text)
                 note.styleDirty = false
                 try store.upsert(note)
-                sheet.entries[notesId] = SidecarEntry(
-                    color: note.color, sortIndex: note.sortIndex, updatedAt: Date()
-                )
+                if let key = keyFor[notesId] {
+                    sheet.entries[key] = SidecarEntry(
+                        color: note.color, sortIndex: note.sortIndex, updatedAt: Date()
+                    )
+                }
                 report.pushed += 1
 
             case .pull(let noteId, let notesId):
@@ -234,7 +244,7 @@ public final class SyncEngine: @unchecked Sendable {
 
             case .adopt(let notesId):
                 guard let incoming = remote.first(where: { $0.id == notesId }) else { break }
-                let entry = sheet.entries[notesId]
+                let entry = keyFor[notesId].flatMap { sheet.entries[$0] }
                 try store.upsert(Note(
                     notesId: incoming.id,
                     text: incoming.text,
@@ -267,7 +277,7 @@ public final class SyncEngine: @unchecked Sendable {
             case .purge(let noteId, let notesId):
                 if let notesId {
                     try bridge.delete(account: account, folder: folder, id: notesId)
-                    sheet.entries[notesId] = nil
+                    if let key = keyFor[notesId] { sheet.entries[key] = nil }
                 }
                 try store.delete(id: noteId)
                 report.deletedRemotely += 1
@@ -284,7 +294,7 @@ public final class SyncEngine: @unchecked Sendable {
                     note.syncedHash = nil
                     try store.upsert(note)
                 }
-                sheet.entries[notesId] = nil
+                if let key = keyFor[notesId] { sheet.entries[key] = nil }
                 report.deletedRemotely += 1
 
             case .restore(let noteId, let notesId):
@@ -305,33 +315,57 @@ public final class SyncEngine: @unchecked Sendable {
             }
         }
 
-        // Every note that lives in Apple Notes gets an entry, not only the ones
-        // this pass happened to create or push. Colour is not part of the note's
-        // text, so changing it triggers no sync action at all, and adopted notes
-        // were never written here either: the file ended up describing a
-        // fraction of the notes, with stale colours for the rest, and none of it
-        // reached the other Mac.
-        let live = try store.all().filter { !$0.isDeleted }
+        // Colour and order move in both directions.
+        //
+        // Only the outgoing half existed before, and a sidecar entry was read
+        // exactly once, when a note was first adopted. So a colour picked on one
+        // Mac was written to the file, synced, and then ignored for ever by the
+        // other Mac, which had adopted that note long ago. Nothing that was not
+        // brand new ever changed colour.
+        var live = try store.all().filter { !$0.isDeleted }
+
+        // Incoming: take what the other Mac set more recently.
+        for (index, note) in live.enumerated() {
+            guard let notesId = note.notesId,
+                  let key = keyFor[notesId],
+                  let entry = sheet.entries[key],
+                  entry.updatedAt > note.updatedAt,
+                  entry.color != note.color || entry.sortIndex != note.sortIndex
+            else { continue }
+            var updated = note
+            updated.color = entry.color
+            updated.sortIndex = entry.sortIndex
+            // Take the entry's timestamp too, so the outgoing pass below sees no
+            // difference and the two Macs do not write back and forth for ever.
+            updated.updatedAt = entry.updatedAt
+            try store.upsert(updated)
+            live[index] = updated
+            report.restyled += 1
+        }
+
+        // Outgoing: publish anything this Mac changed more recently.
         for note in live {
-            guard let notesId = note.notesId else { continue }
-            guard let existing = sheet.entries[notesId] else {
-                sheet.entries[notesId] = SidecarEntry(
+            guard let notesId = note.notesId, let key = keyFor[notesId] else { continue }
+            guard let existing = sheet.entries[key] else {
+                sheet.entries[key] = SidecarEntry(
                     color: note.color, sortIndex: note.sortIndex, updatedAt: note.updatedAt
                 )
                 continue
             }
             let differs = existing.color != note.color || existing.sortIndex != note.sortIndex
-            // Only overwrite when this Mac's version is genuinely newer, or a
-            // colour picked on the other Mac would be undone on every poll.
             if differs, note.updatedAt > existing.updatedAt {
-                sheet.entries[notesId] = SidecarEntry(
+                sheet.entries[key] = SidecarEntry(
                     color: note.color, sortIndex: note.sortIndex, updatedAt: note.updatedAt
                 )
             }
         }
 
-        let liveIds = Set(live.compactMap(\.notesId))
-        sheet.entries = sheet.entries.filter { liveIds.contains($0.key) }
+        // Prune only what this Mac can account for. Keys it cannot resolve are
+        // left alone: an entry for a note that is merely ambiguous here, or not
+        // yet synced down, belongs to the other Mac and is not ours to delete.
+        let liveKeys = Set(live.compactMap { $0.notesId.flatMap { keyFor[$0] } })
+        let resolvable = Set(keyFor.values)
+        sheet.entries = sheet.entries.filter { liveKeys.contains($0.key) || !resolvable.contains($0.key) }
         sidecar.save(sheet)
         return report
     }

@@ -8,6 +8,12 @@ public struct RemoteNote: Codable, Equatable, Sendable {
     /// The raw HTML body. Never read for its characters, only for the positions
     /// of the `<b>`, `<i>` and `<u>` tags.
     public var body: String
+    /// When Apple Notes says the note was created.
+    ///
+    /// This is the key anything shared between Macs has to hang off. `id` is a
+    /// Core Data URI built from the local store's UUID and a local row number,
+    /// so the same note has a different `id` on every machine.
+    public var createdAt: Date
     public var modifiedAt: Date
 
     /// Formatting recovered from the body, aligned against the plain text.
@@ -16,10 +22,14 @@ public struct RemoteNote: Codable, Equatable, Sendable {
         NoteHTML.styleRuns(fromBody: body, plainText: text)
     }
 
-    public init(id: String, title: String, text: String, body: String = "", modifiedAt: Date) {
+    public init(
+        id: String, title: String, text: String, body: String = "",
+        createdAt: Date = .distantPast, modifiedAt: Date
+    ) {
         self.id = id
         self.title = title
         self.body = body
+        self.createdAt = createdAt
         // Notes appends a trailing newline to every body it stores. Left alone,
         // that one character makes every freshly pushed note look changed on the
         // next poll, and the app would sync in a loop for ever.
@@ -219,6 +229,7 @@ public final class NotesBridge: NotesBridging, @unchecked Sendable {
             title: raw["title"] as? String ?? NoteHTML.title(of: text),
             text: text,
             body: raw["body"] as? String ?? "",
+            createdAt: (raw["createdAt"] as? String).flatMap(parseDate) ?? .distantPast,
             modifiedAt: modified
         )
     }

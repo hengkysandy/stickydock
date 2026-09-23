@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 import StickyDockCore
@@ -22,6 +23,17 @@ final class AppState: ObservableObject {
     /// The tab the pointer is over. Drives the sneak peek, and it is the panel's
     /// width that follows it, so it lives here rather than inside a view.
     @Published var hoveredNoteId: String?
+    /// The tab being dragged up or down the deck, if any.
+    @Published private(set) var reorderingNoteId: String?
+    /// How far it has been carried, and the slot it would land in. Nothing is
+    /// written until the mouse comes up: a write per pixel would be a sync per
+    /// pixel, and the order is what the other Mac reads.
+    @Published private(set) var reorderDrag: Double = 0
+    @Published private(set) var reorderTarget: Int?
+    /// Watches for the mouse coming up. SwiftUI's `onEnded` is reliable here,
+    /// but a reorder that never ends leaves the deck frozen in a half-dragged
+    /// order, so there is a second way out that does not depend on SwiftUI.
+    private var reorderWatchdog: Timer?
 
     let store: NoteStoring
     /// Fired after an edit settles, so a sync can follow shortly after.
@@ -49,7 +61,28 @@ final class AppState: ObservableObject {
 
     var hoveredNote: Note? {
         guard let hoveredNoteId, hoveredNoteId != selectedNoteId else { return nil }
+        // A peek opening mid-drag would widen the panel under the pointer, which
+        // is the feedback loop that made the dock oscillate once already.
+        guard reorderingNoteId == nil else { return nil }
         return notes.first { $0.id == hoveredNoteId }
+    }
+
+    /// Where the carried tab started. Read from the live list, so a sync landing
+    /// mid-drag cannot leave it pointing at the wrong row.
+    private var reorderOrigin: Int? {
+        guard let reorderingNoteId else { return nil }
+        return notes.firstIndex { $0.id == reorderingNoteId }
+    }
+
+    /// How far this tab should be drawn from where it normally sits.
+    func tabOffset(for note: Note, at index: Int) -> Double {
+        guard let origin = reorderOrigin, let target = reorderTarget else { return 0 }
+        if note.id == reorderingNoteId {
+            return NoteOrder.carriedOffset(drag: reorderDrag, origin: origin,
+                                           pitch: Theme.tabPitch, count: notes.count)
+        }
+        return NoteOrder.displacement(atIndex: index, origin: origin, target: target,
+                                      pitch: Theme.tabPitch)
     }
 
     /// Owns the desktop windows. Set by the app delegate once, so the views can
@@ -195,6 +228,72 @@ final class AppState: ObservableObject {
         try? store.markDeleted(id: noteId, at: Date())
         if selectedNoteId == noteId { selectedNoteId = nil }
         reload()
+        onLocalEdit?()
+    }
+
+    // MARK: - Reordering the deck
+
+    func beginReorder(_ noteId: String) {
+        guard reorderingNoteId == nil, let origin = notes.firstIndex(where: { $0.id == noteId })
+        else { return }
+        reorderingNoteId = noteId
+        reorderDrag = 0
+        reorderTarget = origin
+        // It has to see the button go down before it will act on it coming up.
+        // Without that it reads "no button pressed" on its first tick, before
+        // the press has registered, and cancels the drag that just started.
+        var sawButtonDown = false
+        // `.common` modes, or it never fires: dragging puts the run loop into
+        // event tracking and a default-mode timer sits there silently.
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard NSEvent.pressedMouseButtons != 0 else {
+                if sawButtonDown { Task { @MainActor in self?.endReorder() } }
+                return
+            }
+            sawButtonDown = true
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        reorderWatchdog = timer
+    }
+
+    /// `verticalDrag` is how far the pointer has moved down the screen since the
+    /// drag began, in points. Down is positive, matching the deck's own order.
+    func updateReorder(_ noteId: String, verticalDrag: Double) {
+        guard reorderingNoteId == noteId, let origin = reorderOrigin else { return }
+        reorderDrag = verticalDrag
+        let target = NoteOrder.targetIndex(
+            movingFrom: origin, byVerticalDrag: verticalDrag,
+            pitch: Theme.tabPitch, count: notes.count
+        )
+        guard target != reorderTarget else { return }
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.86)) {
+            reorderTarget = target
+        }
+    }
+
+    /// Writes the dragged order down, once.
+    func endReorder() {
+        reorderWatchdog?.invalidate()
+        reorderWatchdog = nil
+        let target = reorderTarget
+        let noteId = reorderingNoteId
+        reorderingNoteId = nil
+        reorderTarget = nil
+        reorderDrag = 0
+        guard let target, let noteId else { return }
+        let moved = NoteOrder.reindexed(NoteOrder.moving(noteId, to: target, in: notes))
+        guard !moved.isEmpty else { return }
+        for note in moved {
+            // Through the store, never a published copy: a sync running in the
+            // background may have just written a notesId onto this note.
+            mutate(note.id) { stored in
+                stored.sortIndex = note.sortIndex
+                stored.updatedAt = note.updatedAt
+            }
+        }
+        reload()
+        // The new order has to reach the other Mac, and that goes out through
+        // the sidecar on the next sync.
         onLocalEdit?()
     }
 

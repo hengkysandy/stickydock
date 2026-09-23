@@ -35,6 +35,9 @@ enum Theme {
     static let tabOverlap: CGFloat = 6
     /// Each tab arrives a beat after the one above it.
     static let tabStagger: Double = 0.045
+    /// Centre to centre between two tabs. Dragging a tab this far moves it one
+    /// slot, so the reorder arithmetic and the drawing agree by construction.
+    static var tabPitch: CGFloat { tabHeight - tabOverlap }
 
     /// How tall the resting pill is for a given number of notes. The panel and
     /// the view both need this: one to draw it, the other to decide where the

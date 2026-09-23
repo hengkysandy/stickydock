@@ -231,7 +231,8 @@ what it makes. It never touches your real StickyDock folder.
 | Peek at a note | Rest the pointer on its tab. Read-only, so a stray hover cannot change anything |
 | Bold / italic / underline | ⌘B, ⌘I, ⌘U |
 | Search inside a note | ⌘F, then ⌘G and ⇧⌘G for next and previous |
-| Put a note on the desktop | Drag it out of the deck |
+| Reorder the deck | Drag a tab up or down |
+| Put a note on the desktop | Drag a tab sideways, out of the deck |
 | Put it back | The `⇥` button in the note's top left corner |
 | Find a buried desktop note | Menu bar › Bring Desktop Notes to Front |
 | Settings | Menu bar › Settings |
@@ -249,10 +250,22 @@ right, and only the tag positions come from the HTML body, which corrupts
 entities. If the two disagree, the formatting is dropped rather than guessed at,
 because putting bold on the wrong words is worse than losing it.
 
+**Up and down reorders, sideways detaches.** Which one a drag means is decided
+once, on the first few points of movement, and then it does not change: a drag
+that started as a reorder will not throw the note onto the desktop halfway
+through. The order you set is written down once, when you let go, and it reaches
+your other Mac on the next sync.
+
 **Desktop notes sit behind your active window.** They stay on the desktop where
 you left them, but they do not cover what you are working in. If one gets buried,
 Menu bar › Bring Desktop Notes to Front pulls them all out. Prefer them pinned on
 top? Settings › Keep Desktop Notes on Top.
+
+**The peek stays until you leave the deck.** Sliding the pointer off a tab and
+onto the peek itself, or down towards the `+`, does not make it vanish. Only
+leaving the panel closes it. That is deliberate: a peek that closed the moment
+the pointer left the tab also resized the panel, and resizing the panel is what
+made the deck flicker.
 
 **Reaching for the deck never takes your keyboard.** Hovering opens it and
 nothing else: whatever you were typing in keeps the focus. Only clicking a note
@@ -300,15 +313,22 @@ therefore needs one sync to finish, and survives a quit in between.
   [Privacy](#privacy-and-the-two-permissions-it-asks-for) for how to verify that
   rather than believe it.
 
-## Note colours
+## Note colours and order
 
 Apple Notes has no custom metadata field, so a colour cannot travel with the
-note. Colours live in a small file in iCloud Drive at
+note. Colours and the order of the deck live in a small file in iCloud Drive at
 `~/Library/Mobile Documents/com~apple~CloudDocs/StickyDock/sidecar.json`, which
 is invisible on the phone and syncs Mac to Mac.
 
-If iCloud Drive is switched off, colours simply stay on this Mac and everything
-else carries on working.
+Each entry is keyed on the note's **creation date**, because that is a property
+Apple Notes syncs and every Mac agrees on. The Apple Notes id looks like a better
+key and is not: it is a Core Data URI carrying the UUID of that Mac's own local
+note store, so the same note has a different id on every machine. Two notes
+created in the same second are left out rather than guessed at, so the worst case
+is a colour that does not travel, never a colour landing on the wrong note.
+
+If iCloud Drive is switched off, colours and order simply stay on this Mac and
+everything else carries on working.
 
 ## Settings
 

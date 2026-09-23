@@ -66,6 +66,10 @@ function describe(note) {
     // entities. The body comes along only so formatting ranges can be recovered.
     text: note.plaintext(),
     body: note.body(),
+    // The only identifier that means the same thing on every Mac. The note's
+    // own `id` is a Core Data URI containing that Mac's local store UUID and a
+    // local row number, so it differs per machine.
+    createdAt: iso(note.creationDate()),
     modifiedAt: iso(note.modificationDate())
   };
 }

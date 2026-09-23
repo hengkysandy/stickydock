@@ -59,6 +59,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak panel] _ in panel?.layoutForCurrentState() }
             .store(in: &cancellables)
+        // Layout is frozen for the length of a drag, so the panel has to be
+        // told to catch up once the drag is over.
+        state.$reorderingNoteId.map { $0 == nil }
+            .merge(with: state.$draggingNoteId.map { $0 == nil })
+            .receive(on: RunLoop.main)
+            .sink { [weak panel] finished in if finished { panel?.layoutForCurrentState() } }
+            .store(in: &cancellables)
 
         // Desktop windows come back before the first sync, so notes that were on
         // screen at quit are on screen at launch.

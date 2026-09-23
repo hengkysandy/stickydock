@@ -77,7 +77,8 @@ struct DockContentView: View {
                         state.selectedNoteId = note.id
                     }
                     .environmentObject(state)
-                    .zIndex(state.selectedNoteId == note.id ? 100 : Double(-index))
+                    .offset(y: state.tabOffset(for: note, at: index))
+                    .zIndex(zIndex(for: note, at: index))
                 }
             }
             Spacer(minLength: 8)
@@ -85,6 +86,13 @@ struct DockContentView: View {
         }
         .frame(width: Theme.tabWidth)
         .padding(.vertical, 10)
+    }
+
+    /// The tab being carried goes above everything, so it is never drawn behind
+    /// the neighbour it is passing.
+    private func zIndex(for note: Note, at index: Int) -> Double {
+        if state.reorderingNoteId == note.id { return 200 }
+        return state.selectedNoteId == note.id ? 100 : Double(-index)
     }
 
     private var emptyTab: some View {

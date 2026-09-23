@@ -16,6 +16,9 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
     private let lock = NSLock()
     private var notes: [String: RemoteNote] = [:]
     private var nextId = 1
+    /// Distinct creation dates, because the sidecar keys on them and notes made
+    /// in the same second are deliberately treated as ambiguous.
+    private var nextCreated = Date(timeIntervalSince1970: 1_700_000_000)
     private(set) var calls: [Call] = []
     /// Set this to make the next operation fail, for error-path tests.
     var failWith: NotesBridgeError?
@@ -48,11 +51,13 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
             // Serialise and parse back, exactly as the real bridge does, so the
             // fake cannot quietly hide a formatting round-trip bug.
             let html = NoteHTML.toHTML(rich)
+            nextCreated = nextCreated.addingTimeInterval(60)
             let note = RemoteNote(
                 id: "x-coredata://fake/ICNote/p\(nextId)",
                 title: NoteHTML.title(of: rich.text),
                 text: rich.text,
                 body: html,
+                createdAt: nextCreated,
                 modifiedAt: Date()
             )
             nextId += 1
@@ -67,9 +72,8 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
             guard let existing = notes[id] else { throw NotesBridgeError.remote("no note \(id)") }
             let note = RemoteNote(id: id, title: NoteHTML.title(of: rich.text),
                                   text: rich.text, body: NoteHTML.toHTML(rich),
-                                  modifiedAt: Date())
+                                  createdAt: existing.createdAt, modifiedAt: Date())
             notes[id] = note
-            _ = existing
             return note
         }
     }

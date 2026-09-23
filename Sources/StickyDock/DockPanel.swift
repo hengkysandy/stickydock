@@ -139,6 +139,10 @@ final class DockPanel: NSPanel {
         // would jump to the other monitor the moment the user clicked over
         // there. A dock pinned to an edge has to stay put.
         guard let screen = NSScreen.screens.first ?? NSScreen.main else { return }
+        // Never resize under a drag. The panel widens for a peek and narrows
+        // again when it closes, and doing that mid-drag moves the window out
+        // from under the pointer, which is what made reordering flicker.
+        guard state.reorderingNoteId == nil, state.draggingNoteId == nil else { return }
         let visible = screen.visibleFrame
 
         // The height never changes. It used to grow with the note count and then
@@ -208,6 +212,13 @@ final class DockPanel: NSPanel {
         collapseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            // Collapsing mid-drag tears down the very view whose gesture is
+            // running, so the drag never ends and the deck stays in its
+            // half-dragged order. Wait it out instead.
+            if self.state.reorderingNoteId != nil || self.state.draggingNoteId != nil {
+                self.scheduleCollapse()
+                return
+            }
             if self.state.selectedNoteId != nil {
                 // Never collapse out from under someone who is typing. But if
                 // they have gone off to another app, an open editor left sitting

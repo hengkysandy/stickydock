@@ -13,17 +13,35 @@ public struct SidecarEntry: Codable, Equatable, Sendable {
     }
 }
 
-/// Keyed by Apple Notes id, so the entries mean the same thing on every Mac.
+/// Keyed by note creation date, so the entries mean the same thing on every Mac.
+///
+/// Version 1 was keyed by the Apple Notes id, which is a Core Data URI carrying
+/// the UUID of *that Mac's* local note store. Those keys can never match on a
+/// second Mac, so nothing in a version 1 file was ever usable and there is
+/// nothing to migrate. See ``SidecarKey``.
 public struct Sidecar: Codable, Equatable, Sendable {
+    /// Bumped when the meaning of a key changes.
+    public static let currentVersion = 2
+
     public var version: Int
     public var entries: [String: SidecarEntry]
 
-    public init(version: Int = 1, entries: [String: SidecarEntry] = [:]) {
+    public init(version: Int = Sidecar.currentVersion, entries: [String: SidecarEntry] = [:]) {
         self.version = version
         self.entries = entries
     }
 
     public static let empty = Sidecar()
+
+    /// Throws away entries this build cannot read.
+    ///
+    /// Nothing visible is lost: colours and order also live in the local
+    /// database, and the version 1 keys were device-local, so no Mac ever
+    /// managed to read another Mac's entries anyway.
+    public func migrated() -> Sidecar {
+        guard version < Sidecar.currentVersion else { return self }
+        return Sidecar(version: Sidecar.currentVersion, entries: [:])
+    }
 }
 
 public protocol SidecarStoring: Sendable {
@@ -82,7 +100,7 @@ public final class SidecarStore: SidecarStoring, @unchecked Sendable {
         guard let data = try? Data(contentsOf: fileURL) else { return .empty }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode(Sidecar.self, from: data)) ?? .empty
+        return ((try? decoder.decode(Sidecar.self, from: data)) ?? .empty).migrated()
     }
 
     public func save(_ sidecar: Sidecar) {

@@ -15,8 +15,14 @@ struct NoteTabView: View {
     let onTap: () -> Void
 
     @State private var hasArrived = false
+    /// Where the pointer was when this drag began, in screen coordinates.
+    @State private var dragOrigin: NSPoint?
 
+    /// How far sideways before the note comes out onto the desktop.
     private static let pullThreshold: Double = 16
+    /// How far up or down before the tab starts changing places. Lower than the
+    /// pull threshold, because a reorder is easy to undo and a detach is not.
+    private static let liftThreshold: Double = 8
 
     var body: some View {
         HStack(spacing: 0) {
@@ -27,22 +33,28 @@ struct NoteTabView: View {
         .background(
             TabShape()
                 .fill(Theme.fill(note.color))
-                .shadow(color: .black.opacity(isSelected ? 0.28 : 0.16),
-                        radius: isSelected ? 7 : 4, x: -2, y: 1)
+                .shadow(color: .black.opacity(isLifted ? 0.34 : (isSelected ? 0.28 : 0.16)),
+                        radius: isLifted ? 10 : (isSelected ? 7 : 4), x: -2, y: 1)
         )
         .overlay(TabShape().strokeBorder(.black.opacity(0.07), lineWidth: 1))
         .clipShape(TabShape())
         // Selected and hovered tabs lean out towards the pointer.
-        .offset(x: isSelected ? -6 : (state.hoveredNoteId == note.id ? -3 : 0))
+        .offset(x: isLifted ? -10 : (isSelected ? -6 : (state.hoveredNoteId == note.id ? -3 : 0)))
+        .scaleEffect(isLifted ? 1.04 : 1)
         .opacity(state.draggingNoteId == note.id ? 0.3 : (hasArrived ? 1 : 0))
         .offset(x: hasArrived ? 0 : 26)
         .contentShape(Rectangle())
+        // Only an entry is acted on. **An exit is ignored on purpose.** The
+        // tracking area lives inside the panel, and AppKit rebuilds it every
+        // time the panel resizes, delivering a false "the pointer left" each
+        // time. Acting on that cleared the peek, which narrowed the panel, which
+        // rebuilt the tracking area, which reported the pointer back inside: the
+        // deck flickered between 81 and 154 points wide, about ten times a
+        // second, for as long as the pointer rested on a tab. The pointer really
+        // leaving is reported by the panel itself, which is a fixed rectangle
+        // and does not resize under the pointer.
         .background(HoverReporter { inside in
-            if inside {
-                state.hoveredNoteId = note.id
-            } else if state.hoveredNoteId == note.id {
-                state.hoveredNoteId = nil
-            }
+            if inside { state.hoveredNoteId = note.id }
         })
         .gesture(tapOrDrag)
         .onAppear {
@@ -54,8 +66,13 @@ struct NoteTabView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(note.title))
-        .accessibilityHint(Text("Open this note, or drag it onto the desktop"))
+        .accessibilityHint(Text(
+            "Open this note, drag it up or down to reorder, or drag it sideways onto the desktop"
+        ))
     }
+
+    /// True while this tab is the one being carried up or down the deck.
+    private var isLifted: Bool { state.reorderingNoteId == note.id }
 
     private var labelStrip: some View {
         ZStack {
@@ -106,19 +123,58 @@ struct NoteTabView: View {
         return Array(widths.prefix(lineCount))
     }
 
+    /// Click to open, drag up or down to change places, drag sideways to put the
+    /// note on the desktop.
+    ///
+    /// All three are one gesture because a separate `onTapGesture` swallows the
+    /// drag. Which of the two drags this is gets decided once, on the first
+    /// movement past a threshold, and then never revisited: letting the decision
+    /// change mid-drag means a tab that jumps out of the deck halfway through
+    /// being reordered.
+    ///
+    /// The distance is measured against `NSEvent.mouseLocation`, in screen
+    /// coordinates, rather than SwiftUI's `translation`. SwiftUI measures
+    /// translation inside the window, and this window resizes itself whenever a
+    /// peek opens or closes. A drag straight down the screen therefore arrived
+    /// here as a sideways jitter of thirty points a frame, which read as a pull
+    /// towards the desktop and threw the note out of the deck.
     private var tapOrDrag: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
-            .onChanged { value in
-                let travelled = max(abs(value.translation.width), abs(value.translation.height))
-                guard travelled > Self.pullThreshold, state.draggingNoteId == nil else { return }
+            .onChanged { _ in
                 let mouse = NSEvent.mouseLocation
-                state.detachByDragging(note.id, from: NotePoint(x: mouse.x, y: mouse.y))
-            }
-            .onEnded { value in
-                let travelled = max(abs(value.translation.width), abs(value.translation.height))
-                if travelled <= Self.pullThreshold, state.draggingNoteId == nil {
-                    onTap()
+                guard let origin = dragOrigin else {
+                    dragOrigin = mouse
+                    return
                 }
+                // Down the screen is positive, matching the deck's own order.
+                let along = origin.y - mouse.y
+                let sideways = mouse.x - origin.x
+
+                if state.reorderingNoteId == note.id {
+                    state.updateReorder(note.id, verticalDrag: along)
+                    return
+                }
+                guard state.draggingNoteId == nil, state.reorderingNoteId == nil else { return }
+                if abs(along) > Self.liftThreshold, abs(along) > abs(sideways) {
+                    state.beginReorder(note.id)
+                    state.updateReorder(note.id, verticalDrag: along)
+                } else if abs(sideways) > Self.pullThreshold {
+                    state.detachByDragging(note.id, from: NotePoint(x: mouse.x, y: mouse.y))
+                }
+            }
+            .onEnded { _ in
+                let origin = dragOrigin
+                dragOrigin = nil
+                if state.reorderingNoteId == note.id {
+                    state.endReorder()
+                    return
+                }
+                guard state.draggingNoteId == nil else { return }
+                let mouse = NSEvent.mouseLocation
+                let travelled = origin.map {
+                    max(abs(mouse.x - $0.x), abs(mouse.y - $0.y))
+                } ?? 0
+                if travelled <= Self.pullThreshold { onTap() }
             }
     }
 }
