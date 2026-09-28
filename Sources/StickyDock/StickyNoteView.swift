@@ -73,7 +73,8 @@ struct StickyNoteView: View {
     }
 
     /// The one place the window can be dragged from. The text view below takes
-    /// its own clicks, so `isMovableByWindowBackground` alone is not enough.
+    /// its own clicks, and the empty strip needs `WindowDragHandle`, because
+    /// `isMovableByWindowBackground` does nothing on a SwiftUI hosting view.
     private var dragStrip: some View {
         HStack(spacing: 6) {
             if showChrome {
@@ -97,7 +98,10 @@ struct StickyNoteView: View {
         .foregroundStyle(Theme.inkSoft)
         .frame(height: 18)
         .padding(.horizontal, 8)
-        .contentShape(Rectangle())
+        // Behind the buttons, so they still take their own clicks. No
+        // `contentShape` on top: that made SwiftUI claim the whole strip, so the
+        // click never reached the handle underneath.
+        .background(WindowDragHandle())
     }
 
     private var colorStrip: some View {
