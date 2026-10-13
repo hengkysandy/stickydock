@@ -65,10 +65,22 @@ struct NoteTabView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(note.title))
+        .accessibilityLabel(Text(
+            ConflictCopy.originalTitle(of: note.title).map { "Conflict copy of \($0)" } ?? note.title
+        ))
         .accessibilityHint(Text(
             "Open this note, drag it up or down to reorder, or drag it sideways onto the desktop"
         ))
+    }
+
+    /// A conflict copy's real title is `<title> (conflict <date>)`, which the
+    /// tab cuts back to `<title>`, so the copy looked like a duplicate of the
+    /// note it came from. The warning sign goes first so it survives the cut.
+    private var label: String {
+        if let original = ConflictCopy.originalTitle(of: note.title) {
+            return "⚠ " + original.uppercased()
+        }
+        return note.title.uppercased()
     }
 
     /// True while this tab is the one being carried up or down the deck.
@@ -79,7 +91,7 @@ struct NoteTabView: View {
             Theme.labelStrip(note.color)
             // The frame goes on before the rotation, so a long title truncates
             // along the tab instead of running off both ends of it.
-            Text(note.title.uppercased())
+            Text(label)
                 .font(.system(size: 8.5, weight: .semibold, design: .rounded))
                 .kerning(0.7)
                 .lineLimit(1)

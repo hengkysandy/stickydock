@@ -79,10 +79,10 @@ final class AppState: ObservableObject {
         guard let origin = reorderOrigin, let target = reorderTarget else { return 0 }
         if note.id == reorderingNoteId {
             return NoteOrder.carriedOffset(drag: reorderDrag, origin: origin,
-                                           pitch: Theme.tabPitch, count: notes.count)
+                                           pitch: Theme.deck(noteCount: notes.count).pitch, count: notes.count)
         }
         return NoteOrder.displacement(atIndex: index, origin: origin, target: target,
-                                      pitch: Theme.tabPitch)
+                                      pitch: Theme.deck(noteCount: notes.count).pitch)
     }
 
     /// Owns the desktop windows. Set by the app delegate once, so the views can
@@ -263,7 +263,7 @@ final class AppState: ObservableObject {
         reorderDrag = verticalDrag
         let target = NoteOrder.targetIndex(
             movingFrom: origin, byVerticalDrag: verticalDrag,
-            pitch: Theme.tabPitch, count: notes.count
+            pitch: Theme.deck(noteCount: notes.count).pitch, count: notes.count
         )
         guard target != reorderTarget else { return }
         withAnimation(.spring(response: 0.26, dampingFraction: 0.86)) {

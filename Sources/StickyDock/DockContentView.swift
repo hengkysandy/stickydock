@@ -59,12 +59,17 @@ struct DockContentView: View {
 
     private var stripeHeight: CGFloat { Theme.stripeHeight(noteCount: state.notes.count) }
 
+    private var deck: DeckGeometry { Theme.deck(noteCount: state.notes.count) }
+
     // MARK: - Reached for
 
     /// The notes shingle down the edge, each keeping its colour and its own
     /// vertical tab.
     private var tabColumn: some View {
-        VStack(spacing: -Theme.tabOverlap) {
+        // Negative spacing is what shingles the tabs. It comes from the deck
+        // geometry, so a crowded deck overlaps more instead of running off the
+        // bottom of the panel.
+        VStack(spacing: deck.pitch - Theme.tabHeight) {
             if state.notes.isEmpty {
                 emptyTab
             } else {
@@ -132,8 +137,8 @@ struct DockContentView: View {
     /// that would push it off the bottom.
     private func peekOffset(for note: Note) -> CGFloat {
         guard let index = state.notes.firstIndex(where: { $0.id == note.id }) else { return 0 }
-        let raw = CGFloat(index) * (Theme.tabHeight - Theme.tabOverlap)
-        let maximum = max(0, Theme.panelHeight - 200)
+        let raw = CGFloat(index) * deck.pitch
+        let maximum = max(0, deck.panelHeight - 200)
         return min(raw, maximum)
     }
 

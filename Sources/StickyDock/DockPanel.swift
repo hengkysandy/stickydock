@@ -84,6 +84,12 @@ final class DockPanel: NSPanel {
             rootView: DockContentView().environmentObject(state)
         )
         host.translatesAutoresizingMaskIntoConstraints = false
+        // The panel decides its own size, always. By default a hosting view
+        // turns its content's size into constraints, so content taller than the
+        // panel pushed the window taller, `layoutForCurrentState` pulled it back,
+        // and the deck bounced between the two heights for as long as it was
+        // open. That was the wiggle.
+        host.sizingOptions = []
 
         let container = HoverReportingView()
         container.onEnter = { [weak self] in self?.expand() }
@@ -149,7 +155,7 @@ final class DockPanel: NSPanel {
         // jump to the full panel height on expand, which also slid the panel
         // vertically because it stays centred. Widening, growing and sliding at
         // once is what made opening the deck feel clumsy. Only the width moves.
-        let height = min(Theme.panelHeight, visible.height - 40)
+        let height = Theme.deck(noteCount: state.notes.count).panelHeight
         let width: CGFloat
         if !state.isExpanded {
             width = Theme.collapsedWidth

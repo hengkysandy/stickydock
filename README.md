@@ -305,8 +305,16 @@ therefore needs one sync to finish, and survives a quit in between.
   is invisible to StickyDock and always will be.
 - **It never merges two versions of a note.** If the same note is edited here and
   on the phone between two polls, both versions are kept and the second one is
-  labelled `(conflict <date>)`. Guessing which edit mattered more is not
-  something a sticky-note app should do.
+  labelled `(conflict <date>)`. In the dock its tab starts with ⚠, so it does not
+  look like a duplicate. Take what you need from it, then delete it. Guessing
+  which edit mattered more is not something a sticky-note app should do.
+- **Editing one note on two Macs at once can double its text.** Apple's scripting
+  interface only lets an app replace a whole note, not change part of it. If
+  both Macs replace the same note before iCloud has synced between them, Apple
+  Notes keeps both versions, one after the other. This mostly happens when one
+  Mac was asleep or offline. StickyDock then flags it as a conflict, so nothing
+  is lost, but give a Mac a few seconds to sync before editing the same note on
+  the other one.
 - **It never sends anything anywhere.** There is no networking code, framework or
   symbol in this app. Your note text goes to Apple through your own iCloud, the
   same way it would if you typed it into Notes yourself, and nowhere else. See

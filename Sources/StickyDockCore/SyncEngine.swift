@@ -264,7 +264,7 @@ public final class SyncEngine: @unchecked Sendable {
                 // note with no id of its own, so it cannot overwrite anything.
                 let stamp = Self.conflictStamp.string(from: Date())
                 try store.upsert(Note(
-                    text: "\(note.title) (conflict \(stamp))\n\n\(remoteText)",
+                    text: ConflictCopy.title(for: note.title, stamp: stamp) + "\n\n" + remoteText,
                     color: note.color,
                     sortIndex: try store.nextSortIndex()
                 ))

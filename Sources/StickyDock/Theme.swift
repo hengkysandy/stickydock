@@ -35,9 +35,29 @@ enum Theme {
     static let tabOverlap: CGFloat = 6
     /// Each tab arrives a beat after the one above it.
     static let tabStagger: Double = 0.045
-    /// Centre to centre between two tabs. Dragging a tab this far moves it one
-    /// slot, so the reorder arithmetic and the drawing agree by construction.
-    static var tabPitch: CGFloat { tabHeight - tabOverlap }
+    /// Everything in the tab column that is not a tab: the padding above and
+    /// below, the gap, and the new-note button. Generous on purpose: if this is
+    /// smaller than the real content, the content is taller than the window.
+    static let deckChrome: CGFloat = 60
+    /// Below this a tab is too thin to aim at, so the deck stops compressing.
+    static let minimumTabPitch: CGFloat = 26
+
+    /// How tall the open deck is and how far apart its tabs are. The panel, the
+    /// tab column and the reorder arithmetic all read this one answer, so a drag
+    /// moves a tab exactly one drawn slot.
+    static func deck(noteCount: Int) -> DeckGeometry {
+        let screen = NSScreen.screens.first ?? NSScreen.main
+        let available = (screen?.visibleFrame.height ?? 900) - 40
+        return DeckGeometry.fitting(
+            noteCount: noteCount,
+            tabHeight: tabHeight,
+            preferredPitch: tabHeight - tabOverlap,
+            minimumPitch: minimumTabPitch,
+            chrome: deckChrome,
+            minimumHeight: panelHeight,
+            maximumHeight: available
+        )
+    }
 
     /// How tall the resting pill is for a given number of notes. The panel and
     /// the view both need this: one to draw it, the other to decide where the
@@ -48,6 +68,7 @@ enum Theme {
 
     static let peekWidth: CGFloat = 236
     static let editorWidth: CGFloat = 330
+    /// The shortest the open deck ever is. It grows past this to fit the notes.
     static let panelHeight: CGFloat = 470
 
     /// A slightly deeper version of the note colour, for the tab's label strip.
