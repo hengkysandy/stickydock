@@ -206,7 +206,7 @@ public final class SyncEngine: @unchecked Sendable {
                     account: account, folder: folder, rich: note.rich
                 )
                 note.notesId = created.id
-                note.syncedHash = ContentHash.of(created.text)
+                Self.settle(&note, on: created)
                 note.styleDirty = false
                 try store.upsert(note)
                 if let key = SidecarKey.of(created) as String? {
@@ -221,7 +221,7 @@ public final class SyncEngine: @unchecked Sendable {
                 let updated = try bridge.update(
                     account: account, folder: folder, id: notesId, rich: note.rich
                 )
-                note.syncedHash = ContentHash.of(updated.text)
+                Self.settle(&note, on: updated)
                 note.styleDirty = false
                 try store.upsert(note)
                 if let key = keyFor[notesId] {
@@ -368,6 +368,30 @@ public final class SyncEngine: @unchecked Sendable {
         sheet.entries = sheet.entries.filter { liveKeys.contains($0.key) || !resolvable.contains($0.key) }
         sidecar.save(sheet)
         return report
+    }
+
+    /// Records a save, taking Apple Notes' copy of the text as the truth.
+    ///
+    /// Notes does not always store exactly what it is given. It turns a
+    /// no-break space into a space, and before `NoteHTML` learnt to protect
+    /// them it also collapsed tabs and double spaces. The base hash has to be
+    /// the text Notes actually holds, or the next pass reads it as a remote
+    /// change. But the local text then still differs from that base, so it
+    /// reads as a local change too, and was saved again. Every pass, for ever,
+    /// from both Macs: that is what made Notes keep two whole versions back to
+    /// back and what kept producing "(conflict …)" copies.
+    ///
+    /// So the local copy follows Notes. Formatting ranges stay put when the
+    /// length did not change, which covers swapping one character for another;
+    /// otherwise they are re-read from what Notes stored.
+    static func settle(_ note: inout Note, on saved: RemoteNote) {
+        if RemoteNote.normalise(saved.text) != RemoteNote.normalise(note.text) {
+            let runs = saved.text.utf16.count == note.text.utf16.count
+                ? note.styleRuns : saved.styleRuns
+            note.text = saved.text
+            note.styleRuns = runs
+        }
+        note.syncedHash = ContentHash.of(saved.text)
     }
 
     private static var conflictStamp: DateFormatter {

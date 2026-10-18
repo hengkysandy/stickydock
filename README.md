@@ -311,10 +311,12 @@ therefore needs one sync to finish, and survives a quit in between.
 - **Editing one note on two Macs at once can double its text.** Apple's scripting
   interface only lets an app replace a whole note, not change part of it. If
   both Macs replace the same note before iCloud has synced between them, Apple
-  Notes keeps both versions, one after the other. This mostly happens when one
-  Mac was asleep or offline. StickyDock then flags it as a conflict, so nothing
-  is lost, but give a Mac a few seconds to sync before editing the same note on
-  the other one.
+  Notes keeps both versions, one after the other. StickyDock then flags it as a
+  conflict, so nothing is lost. Before v1.3.3 this happened far more often than
+  it should have: a note containing a tab or a double space was rewritten every
+  minute by every Mac, because Apple Notes stored those as single spaces and the
+  app kept "correcting" it. **Run the same version on every Mac**, or an older
+  one keeps doing that.
 - **It never sends anything anywhere.** There is no networking code, framework or
   symbol in this app. Your note text goes to Apple through your own iCloud, the
   same way it would if you typed it into Notes yourself, and nowhere else. See

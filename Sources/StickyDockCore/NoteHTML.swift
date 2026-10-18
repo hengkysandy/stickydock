@@ -18,7 +18,7 @@ public enum NoteHTML {
         let lines = normalisedLines(text)
         guard !lines.isEmpty else { return "<div><br></div>" }
         return lines.map { line in
-            line.isEmpty ? "<div><br></div>" : "<div>\(escape(line))</div>"
+            line.isEmpty ? "<div><br></div>" : "\(lineOpener(line))\(escape(line))</div>"
         }.joined()
     }
 
@@ -42,6 +42,20 @@ public enum NoteHTML {
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")
+    }
+
+    /// The opening tag for one line of the note.
+    ///
+    /// Notes reads the body as HTML, and HTML collapses whitespace: a tab came
+    /// back as a space, a tab at the start of a line vanished, and two spaces
+    /// came back as one. Notes then held different text from the app, which is
+    /// how an untouched note ended up rewritten every minute (see
+    /// `SyncEngine.settle`). `white-space:pre-wrap` keeps all of them exactly;
+    /// probed against the live app. Only lines that need it get it, so an
+    /// ordinary note's HTML does not change at all.
+    static func lineOpener(_ line: String) -> String {
+        let collapsible = line.contains("\t") || line.contains("  ") || line.hasPrefix(" ")
+        return collapsible ? "<div style=\"white-space:pre-wrap\">" : "<div>"
     }
 
     /// The ampersand has to go first. Escaping `<` first would produce `&lt;`,
@@ -77,7 +91,9 @@ extension NoteHTML {
             }
         }
 
-        var html = "<div>"
+        let lines = rich.text.components(separatedBy: "\n")
+        var line = 0
+        var html = lineOpener(lines[0])
         var open = Style()
         var index = 0
         while index < units.count {
@@ -87,7 +103,8 @@ extension NoteHTML {
             if units[index] == 0x000A {
                 html += close(open)
                 open = Style()
-                html += "</div><div>"
+                line += 1
+                html += "</div>" + lineOpener(line < lines.count ? lines[line] : "")
                 index += 1
                 continue
             }

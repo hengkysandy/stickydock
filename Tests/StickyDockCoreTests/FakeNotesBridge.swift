@@ -22,6 +22,10 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
     private(set) var calls: [Call] = []
     /// Set this to make the next operation fail, for error-path tests.
     var failWith: NotesBridgeError?
+    /// What Apple Notes does to text on the way in. The real one turns a
+    /// no-break space into a plain space, for one, and once collapsed tabs and
+    /// double spaces too. Identity by default.
+    var rewritesOnSave: (String) -> String = { $0 }
 
     init(notes: [RemoteNote] = []) {
         for note in notes { self.notes[note.id] = note }
@@ -55,7 +59,7 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
             let note = RemoteNote(
                 id: "x-coredata://fake/ICNote/p\(nextId)",
                 title: NoteHTML.title(of: rich.text),
-                text: rich.text,
+                text: rewritesOnSave(rich.text),
                 body: html,
                 createdAt: nextCreated,
                 modifiedAt: Date()
@@ -71,7 +75,7 @@ final class FakeNotesBridge: NotesBridging, @unchecked Sendable {
         return try lock.withLock {
             guard let existing = notes[id] else { throw NotesBridgeError.remote("no note \(id)") }
             let note = RemoteNote(id: id, title: NoteHTML.title(of: rich.text),
-                                  text: rich.text, body: NoteHTML.toHTML(rich),
+                                  text: rewritesOnSave(rich.text), body: NoteHTML.toHTML(rich),
                                   createdAt: existing.createdAt, modifiedAt: Date())
             notes[id] = note
             return note

@@ -447,6 +447,68 @@ struct SyncEngineRunTests {
         #expect(try store.find(notesId: "r1")?.color == .purple)
     }
 
+    // MARK: - Text that Apple Notes rewrites on save
+
+    /// The bug behind the repeated "personal (conflict …)" notes. Notes turned a
+    /// tab into a space on the way in. The engine recorded the Notes version as
+    /// the base, so the untouched local text (still with its tab) looked edited
+    /// on every pass and was rewritten every minute, from both Macs, until two
+    /// rewrites crossed and Notes kept both, back to back.
+    @Test func textThatNotesRewritesOnSaveIsPushedOnceNotForever() throws {
+        let (engine, store, bridge, dir) = try makeEngine(
+            notes: [Note(id: "l1", text: "title\nnon\u{00A0}breaking")]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+        bridge.rewritesOnSave = { $0.replacingOccurrences(of: "\u{00A0}", with: " ") }
+
+        _ = try engine.runOnce()   // creates it
+        let notesId = try #require(try store.find(id: "l1")?.notesId)
+        try store.upsert({ var n = try store.find(id: "l1")!; n.text = "title\nedited\u{00A0}here"; return n }())
+        _ = try engine.runOnce()   // pushes the edit
+        let writes = bridge.calls.filter { if case .update = $0 { return true } else { return false } }.count
+
+        for _ in 0..<3 { _ = try engine.runOnce() }
+
+        let after = bridge.calls.filter { if case .update = $0 { return true } else { return false } }.count
+        #expect(after == writes, "an unedited note must not be rewritten on every pass")
+        // The local copy settles on what Notes actually holds.
+        #expect(try store.find(id: "l1")?.text == bridge.current.first { $0.id == notesId }?.text)
+    }
+
+    @Test func aNewNoteThatNotesRewritesIsNotPushedStraightBack() throws {
+        let (engine, store, bridge, dir) = try makeEngine(
+            notes: [Note(id: "l1", text: "title\na\u{00A0}b")]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+        bridge.rewritesOnSave = { $0.replacingOccurrences(of: "\u{00A0}", with: " ") }
+
+        _ = try engine.runOnce()
+        let report = try engine.runOnce()
+        #expect(report.pushed == 0)
+        #expect(try store.find(id: "l1")?.text == "title\na b")
+    }
+
+    @Test func noConflictWhenTheOtherMacEditsANoteNotesHadRewritten() throws {
+        // The exact sequence that produced the conflicts: this Mac saves, Notes
+        // rewrites, the other Mac then edits. This Mac changed nothing, so this
+        // must be a plain pull.
+        let (engine, store, bridge, dir) = try makeEngine(
+            notes: [Note(id: "l1", text: "title\nline one\u{00A0}")]
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+        bridge.rewritesOnSave = { $0.replacingOccurrences(of: "\u{00A0}", with: " ") }
+        _ = try engine.runOnce()
+        let notesId = try #require(try store.find(id: "l1")?.notesId)
+
+        // The other Mac's edit arrives through iCloud.
+        _ = try bridge.update(account: "iCloud", folder: "StickyDock", id: notesId,
+                              rich: RichText(text: "title\nline one\nadded on the other Mac"))
+        let report = try engine.runOnce()
+
+        #expect(report.conflicts == 0)
+        #expect(try store.find(id: "l1")?.text == "title\nline one\nadded on the other Mac")
+    }
+
     @Test func reorderingTheDeckHereIsPublishedToTheSidecar() throws {
         // Dragging a tab up or down only changes sortIndex. If that does not
         // reach the sidecar, the other Mac keeps the old order forever.

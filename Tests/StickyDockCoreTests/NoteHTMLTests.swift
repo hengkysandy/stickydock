@@ -55,3 +55,42 @@ struct NoteHTMLTests {
         #expect(NoteHTML.title(of: String(repeating: "🎉", count: 100)).count == 60)
     }
 }
+
+/// Apple Notes reads a body as HTML, which collapses whitespace: a tab became a
+/// space, a leading tab vanished, two spaces became one. Probed against the live
+/// app: `white-space:pre-wrap` on the line's div keeps all of them exactly.
+@Suite("NoteHTML whitespace")
+struct NoteHTMLWhitespaceTests {
+    private let keep = "<div style=\"white-space:pre-wrap\">"
+
+    @Test func aLineWithATabIsProtected() {
+        #expect(NoteHTML.toHTML("title\na\tb") == "<div>title</div>\(keep)a\tb</div>")
+    }
+
+    @Test func doubleSpacesAndLeadingSpacesAreProtected() {
+        #expect(NoteHTML.toHTML("a  b").hasPrefix(keep))
+        #expect(NoteHTML.toHTML(" indented").hasPrefix(keep))
+        #expect(NoteHTML.toHTML("\tindented").hasPrefix(keep))
+    }
+
+    @Test func ordinaryLinesAreLeftExactlyAsTheyWere() {
+        // Not every note gets restyled: only lines that need it.
+        #expect(NoteHTML.toHTML("title\nplain line") == "<div>title</div><div>plain line</div>")
+        #expect(NoteHTML.toHTML("one trailing space ") == "<div>one trailing space </div>")
+    }
+
+    @Test func formattedTextIsProtectedToo() {
+        let rich = RichText(text: "title\nbold\there",
+                            runs: [TextStyleRun(location: 6, length: 4, bold: true)])
+        let html = NoteHTML.toHTML(rich)
+        #expect(html.contains("\(keep)<b>bold</b>\there</div>"))
+        #expect(html.hasPrefix("<div>title</div>"))
+    }
+
+    @Test func formattingIsStillRecoveredFromAProtectedLine() {
+        let rich = RichText(text: "t\nbold\there",
+                            runs: [TextStyleRun(location: 2, length: 4, bold: true)])
+        let runs = NoteHTML.styleRuns(fromBody: NoteHTML.toHTML(rich), plainText: rich.text)
+        #expect(runs == [TextStyleRun(location: 2, length: 4, bold: true)])
+    }
+}

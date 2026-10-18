@@ -67,6 +67,90 @@ struct NotesBridgeLiveTests {
         #expect(try bridge.list(account: account, folder: folder).isEmpty)
     }
 
+    /// Tabs and repeated spaces have to come back exactly. When they did not,
+    /// the app and Notes disagreed after every save, and an untouched note was
+    /// rewritten every minute until two Macs' rewrites collided.
+    @Test func tabsAndRepeatedSpacesSurviveExactly() throws {
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let texts = [
+            "Probe\nline one\t\nline two",
+            "Probe\na\tb",
+            "Probe\n\tindented",
+            "Probe\na  b   c",
+            "Probe\n  two leading spaces",
+        ]
+        for text in texts {
+            let made = try bridge.create(account: account, folder: folder, rich: RichText(text: text))
+            #expect(made.text == text, "create changed \(text.debugDescription) into \(made.text.debugDescription)")
+            let edited = text + "\n\tmore"
+            let updated = try bridge.update(account: account, folder: folder, id: made.id,
+                                            rich: RichText(text: edited))
+            #expect(updated.text == edited, "update changed \(edited.debugDescription)")
+        }
+    }
+
+    @Test func formattingSurvivesOnALineWithATab() throws {
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let rich = RichText(text: "Probe\nbold\tplain",
+                            runs: [TextStyleRun(location: 6, length: 4, bold: true)])
+        let made = try bridge.create(account: account, folder: folder, rich: rich)
+        #expect(made.text == rich.text)
+        #expect(made.styleRuns == rich.runs)
+    }
+
+    /// A no-break space still becomes a space: Notes' `plaintext` does that
+    /// whatever the HTML says. `SyncEngine.settle` is what keeps it from looping.
+    @Test func aNoBreakSpaceStillComesBackAsASpace() throws {
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let made = try bridge.create(account: account, folder: folder,
+                                     rich: RichText(text: "Probe\na\u{00A0}b"))
+        #expect(made.text == "Probe\na b")
+    }
+
+    /// The whole engine against the real Notes: a note Notes rewrites on save
+    /// must be saved once and then left alone. Before the fix every pass pushed
+    /// it again, which is what produced the repeated conflict copies.
+    @Test func theEngineSettlesInsteadOfRewritingEveryPass() throws {
+        let bridge = try bridge()
+        try bridge.ensureFolder(account: account, folder: folder)
+        try emptyFolder(bridge)
+        defer { try? emptyFolder(bridge) }
+
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("stickydock-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try NoteStore(path: dir.appendingPathComponent("n.sqlite").path)
+        let sidecar = SidecarStore(directory: dir)
+        let engine = SyncEngine(store: store, bridge: bridge, sidecar: sidecar,
+                                account: account, folder: folder)
+
+        try store.upsert(Note(id: "l1", text: "Probe\nindented\ttab\na\u{00A0}nbsp  and two spaces"))
+        #expect(try engine.runOnce().created == 1)
+
+        var pushes = 0
+        for _ in 0..<3 { pushes += try engine.runOnce().pushed }
+        #expect(pushes == 0, "an unedited note was saved again \(pushes) times")
+
+        let notesId = try #require(try store.find(id: "l1")?.notesId)
+        let remote = try #require(try bridge.list(account: account, folder: folder).first { $0.id == notesId })
+        #expect(try store.find(id: "l1")?.text == remote.text)
+        #expect(remote.text.contains("\t"), "the tab must survive")
+        #expect(remote.text.contains("two spaces") && remote.text.contains("  and"))
+    }
+
     @Test func creatingTwiceGivesTwoDistinctIds() throws {
         let bridge = try bridge()
         try bridge.ensureFolder(account: account, folder: folder)
